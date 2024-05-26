@@ -1,0 +1,90 @@
+Episode 10 - Config Files with Bash can be Dangerous
+
+Key concepts:
+- sourcing shell scripts as configuration files
+- bash -x tracing
+- associative arrays using the declare builtin
+- deceptive relationships between inline variable assignment in simple command execution vs standard assignment of variables
+- use of the IFS env var (defined inline) to change behavior of the read builtin, vs setting that var globally for the script ahead of the loop
+
+TOPIC 1: Sourcing.
+Bash includes two builtins, '.' and 'source', which both do the same thing as an 'include' directive in a C program does -- reads the contents of a file and executes commands within it in the context of the current script. 
+
+Why two builtins, instead of just the dot (.) command, or just the source command? The '.' version is the original name of the command, and comes to us from the Bourne shell, part of the POSIX specification and therefore available in every Unix and nearly every shell. The 'source' version is bash specific but is also present in many other shell variants including zsh, and is often preferred because it's less likely to confuse someone who's reading your script.
+
+Sourcing is a good way to break up code from complex scripts into multiple files, especially if you are going to be re-using some of the code between many scripts. It's a pattern you'll see often in the real world, and that I encourage you to begin incorporating into your own scripts. Also, login to a standard Linux host almost certainly does this! Even on MacOS where the included bash is not the default shell, there is an /etc/bashrc which selectively sources other files in /etc depending on your invoking terminal. Many Linux distributions also auto-source everything in /etc/bash_profile.d/ as part of login.
+
+TOPIC 2: Tracing using set -x or bash -x. 
+You can get tracing in your shell, which is verbose output written to your console as scripts execute. The "+ " which decorates every line appears before the simple command that bash is executing is given by the PS4 environment variable, which is a prompt variable and can be changed. In very complex scripts where you are sourcing multiple files and executing functions in the sourced files, you may find benefit in changing that variable like this:
+  PS4='+ (${FUNCNAME[*]}:$BASHPID) '
+
+FUNCNAME is an array showing the function call stack for your function, with currently-executing function leftmost. BASHPID is the same as $$, with the exception that when bash forks a subshell but does not exec to re-initialize, such that there's a different pid and therefore different scope for variables, you can see it. Errors where you try to modify a variable in a subshell and then reference that in the parent really pop if you do this.
+
+The first character of PS4 is repeated to denote script depth, such that file sourcing and similar gives different context than commands in your regular script.
+
+Oh, and when you're ready to not have any more tracing, you can do 'set +x' to turn it back off.
+
+One little note of errata: Tracing is controlled via 'set' rather than 'setopt' because tracing is a Bourne shell behavior that bash copied, and will emulate even when it's running in POSIX mode. All such behaviors are controlled using switches to the 'set' command. Any bash-specific behaviors are controlled by 'setopt'. So if you're writing for portability or for legacy compatibility, use of 'set' in someone else's script should give you a sense of confidence, and use of 'setopt' should perk up your antennae and let you know that you're working with a bash-specific oconstruct.
+
+I keep harping on portability in these constructs because a core place where you need to be good at shell programming is if your career ever requires you to support embedded or legacy environments. There are still a surprising number of jobs in the world that require you to be comfortable not just in a current Linux, but in a surprisingly old version of AIX, or Solaris, or FreeBSD/OpenBSD, or HP-UX, or even something more exotic like SCO UNIX. Having a good sense for which parts of bash belong to bash, versus which parts of bash are part of its implementation of the classic Bourne shell, will make you a much more confident programmer if you ever have occasion to delve into those legacy systems. (One note about that: The year 2038 problem is happening soon enough that governments and businesses which need to care about it already need to be planning for it in their 10-year budget horizon in order to be hiring and pushing out fixes in time, without having to make out-of-cycle emergency appropriations. Is the CTO for your state government or utility company thinking about that? Do you know how to find out? If you're watching this channel, you already know more about the subject than most concerned citizens, whether you realize it or not.)
+
+TOPIC 3: Associative arrays using the declare builtin.
+These are called 'hash', 'dict', 'mapping', 'object', or 'alist' in various other languages, but what they are is key/value pairs. An array, indexed with strings instead of integers. There's a lot to bash associative arrays, more than would be reasonable for me to discuss in a YouTube comment, so for now just know that they exist and they're a way to initialize variables when you don't know how many you'll need, just like a config file. There are also ways to do this with naked variables, but this mechanism is far safer.
+
+TOPIC 4: Inline assignment vs standard assignment.
+The general scenario here was a line in the sourced config file: VAR=word1 word2 word3 word4. The contract that the user intuitively expects is that everything to the right of the equal sign, perhaps minus leading and trailing whitespace, will be assigned as the value for VAR. Bash instead interprets the entire line as a line of script, i.e. a simple command. A simple command, as a reminder, is zero or more inline variable assignments followed by a command followed by its arguments, potentially combined with some handling of file descriptors. word1 is treated as the variable for the inline assignment, word2 is treated as the command which gets VAR supplied to it as an environment variable, word3 and word4 are treated as arguments to the command. All this is simple just from the fact that the line is input to a script. Dave's point is that sometimes people think 'source filename.env' just loads a set of environment variables from filename.env, rather than directly executing a script. (Note: There are patterns, such as the env vars files provided by systemd, which do work that way.) Bash isn't magic, it's just full of implications which aren't obvious until you understand the basic grammar of the language.
+
+TOPIC 5: Inline assigmment vs global assignment of IFS.
+
+Dave gives an example loop, which I will supply without the IFS assignment for clarity:
+	while read -r key value; do
+		conf[$key]=$value
+	done < ./conf
+
+This contains a control structure, a simple command executing the 'read' builtin, and a variable assignment.
+
+The control structure is: while (simple-command); do ...; done < ./conf
+
+Let's start by breaking this down. Bash is saying:
+1. Begin a loop.
+2. Execute the simple command and inspect its return code.
+3. If the command exits with code zero, execute all the commands in the do/done block, and return to the start of the loop.
+4. If the command exits with a different exit code, terminate the loop.
+5. Redirect stdin to point at ./conf for all iterations of the simple command, and all commands executed in the do/done block.
+
+The simple command is: read -r key value
+
+Let's also break this down. read is a bash builtin. It reads a line from stdin. With -r present, it treats backslashes preceding either field separators or newlines as literals. The arguments, key and value, break apart the line of stdin using any characters from the IFS string as field separators, assigning the first word to key and the remainder of the line to value. Our problematic line of input is "baz=3 echo !! hacked lol uh oh !!".
+
+I left out where IFS gets assigned here. There are two ways to do this that would work:
+
+Example 1, which Dave used in the script:
+	while IFS='=' read -r key value; do
+		conf[$key]=$value
+	done < ./conf
+
+Example 2:
+	IFS='='
+	while read -r key value; do
+		conf[$key]=$value
+	done < ./conf
+
+What's the difference between these? In example 1, we are assigning IFS once per invocation of read, in a way which only applies to that invocation. In example 2, we are permanently reassigning IFS, not just for the duration of the while loop, but for any subsequent logic a more complex real-world script includes. If we don't reset IFS to its original value, we might get results we do not intend later in the script.
+
+I thought about deleting this whole section, but I think it's important. All this is worth understanding because IFS is an environment variable bash honors, but is not an exported variable unless you make it one. Rather, it's an invocation-time default for bash, inherited by subshells but not execed processes. Understanding how and why changes to you make it get picked up by other scripts/commands or not is important to your understanding of how bash operates generally. 
+
+CONCLUSION AND EXERCISES.
+What are the most important lessons to take from this?
+- First, understand that 'source' means "read this file and execute all the commands inside it as though they were part of this script." It isn't a magical "map some env vars" command.
+- Second, understand how inline assignment as part of bash simple commands works, how you can use it to your advantage, and why it might trip you up if it happens somewhere you aren't expecting it to.
+- Third, when your script doesn't work as intended, the first thing you should almost always try is to turn on tracing (either by saying 'bash -x (script)' or by saying 'set -x' inside your script).
+
+Including configuration files in your script is a great way to level up your bash programming to include important real world patterns. If you want to start from what Dave showed here and adapt it to more real-world examples, here are some exercises for you:
+1. How would you make your configuration file format honor comments?
+2. What would Dave's script do if you padded it with either empty lines or whitespace-only lines between assignments?
+3. What would Dave's script do if you defined the same variable in it twice?
+4. If you wanted to amend Dave's script to support configuration values including integral newlines, how would you implement that? Is the '-r' switch his sample script provides provident or improvident?
+
+Remember, if you ever want to experiment with the 'cringe' and 'based' examples he gives in an episode, everything he shows is available at https://github.com/bahamas10/you-suck-at-programming, and a full catalog of all of his original TikTok episodes is available at ysap.daveeddy.com.
+
+Happy scripting and tracing!

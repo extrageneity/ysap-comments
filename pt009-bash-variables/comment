@@ -1,0 +1,39 @@
+Episode 9 - Variable Exporting on Bash
+
+Key concepts from this episode:
+1. environment variables, the export builtin
+2. assigning environment variables temporarily as part of commmand execution
+
+What is an environment variable, really? It's a variable which is accessible to a program when it is initially executed. The environment variables, collectively, are a set of key/value pairs, all strings.
+
+Environment variables are provided via the kernel itself, via the execve() system call, and the standard library functions like exec() which wrap it.
+
+The system call function prototype for execve() is: int execve(const char *filename, char *const argv[], char *const envp[]);
+
+filename, the program to execute, which can either be a binary or an interpreted script.
+argv, the arguments given to main() in the executed program.
+envp, an array of environment variables.
+
+In Linux, you can see the environment variables that were provided at execution time in /proc/<pid>/environ.However, the contents of these fields cannot be inspected by other users on the system, only by yourself and root. Environment variables are generally considered to be a highly secure way of passing information like passwords and API tokens into programs--however take care that you do not write plaintext copies of those secrets into your .bash_history if you are working in an environment which prohibits secrets from being stored in plaintext on disk! Exporting passwords from a password manager like BitWarden or 1Password's CLI tools, or from a dedicated secrets store like Hashicorp Vault, is one potential solution. Initially getting a variable into your own environment via something like export MYVAR="$(cat)" or, on MacOS, export MYVAR="$(pbpaste)" are also options.
+
+So, an environment variable in bash is a variable which will be passed to child processes that are created via exec() system calls.
+
+What does bash decide to set as child environment variables?
+- Any environment variables it had at execution time.
+- Any bash variable which has been marked for export, using either the export builtin, or the 'declare -x' builtin, which Dave didn't discuss in this video, or via 'set -a', or probably even via other means.
+- Any bash variables assigned during command execution.
+
+Additional reading can be found in the Bash Reference Manual, which you can read on gnu.org or using 'info bash': 
+- Section 3.7.1 (Simple Command Expansion)
+- Section 3.7.3 (Command Execution Environment)
+- Section 3.7.4 (Environment)
+
+Dave here is not talking at all about all the different ways that bash can treat variables within its own execution environment, only about environment variables. Environment variables are just a simple set of key/value pairs, but bash variables can be other data types, including integers, arrays, and associative arrays, and also contemplates variable scoping either to make variables function-local, or to mark them as global without also marking them for export.
+
+There is also a 'printenv' command but if you've been following Dave's videos and my comments, you'll be able to figure out for yourself why I think it's cringe.
+
+Work exercise: For an experiment on Linux, what happens when you run:
+	while read -d $'\000';do echo "${REPLY}"; done < /proc/$$/environ
+... and then change the value of an environment variable in your bash environment and run it again? Did your value change? Why or why not? 
+
+Short episode, shorter comment. Happy scripting!

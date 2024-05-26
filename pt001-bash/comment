@@ -1,0 +1,16 @@
+Some of the concepts shown in this script:
+1. Shebang (#!) line is not merely a path to a file, but a command line execution with arguments. Additional study on what happens in a file with a #! starting line in a POSIX/Unix/Linux environment can start with a look at the exec() family of system calls.
+
+2. Dave touches on how causing bash to be executed from a path-expanded location can be preferable to hardcoding a path for reasons of portability, but doesn't elaborate about the reasons why you might or might not care about portability for a given script. This expands into a broader discussion of when to choose to implement something in shell, vs when to implement in a more heavyweight language. 
+
+2. Dave mentions that running an external command is not as good as using a bash builtin but doesn't directly explain why. A big source of performance overhead in scripts is the number of external commands (i.e., forks, or separate Unix/Linux processes that have to be spawned) that the script executes. Each such external command in a robust, production-grade script needs error handling, including for hard to predict problems such as host-level resource exhaustion. Builtins tend to not just be more performant, but less error-prone. Again, study of the fork() and exec() family of system calls, and a general knowledge of the Unix/Linux process model as described in Advanced Programming in the Unix Environment by Stevens/Rago, is a great place to start if you want deeper knowledge here.
+
+3. The backticks (`command`) syntax, where a command is executed and its standard output is interpolated into the bash expression where the backticks appear. Dave didn't mention $() which is very similar to backticks but not identical with them, and when you might want to choose one over the other.
+
+4. A simple for loop, iterating over the text of that command using bash word splitting. Word splitting is a critical concept to understand in shell scripting, as nearly everything you do needs to consider it. Dave will talk about this concept extensively later in the series.
+
+5. Bash globbing, which gives the shell a way of interacting with file lists without using the ls command, and therefore without having to deal directly with word splitting. This concept, which is that changing the for loop to use a glob instead of command output, actually accomplished two things: Not just saving a fork, but changing the iteration to loop over actual filenames instead of a word-split list of filenames. A subtle but important distinction.
+
+6. The echo command/builtin. Further reading here can happen at both 'man echo' and 'man bash'. Why you need to read both, and how to understand which you are dealing with, is a subject for later discussion.
+
+7. One of the key challenges of the command line, dealing with and handling files that have names which collide with shell special characters.

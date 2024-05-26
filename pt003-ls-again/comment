@@ -1,0 +1,39 @@
+Episode 3, Listing and Looping Files
+
+This is a continuation from Episode 1, revisiting "cringe" and "based" versions of a script.
+
+As before, Dave is demonstrating how bash word splitting needs to be taken into account while working with other utilities, and demonstrates an alternative method of collecting filenames, this time piping the output of ls to a 'while read' loop rather than interpolating ls output into the loop directly using backticks syntax.
+
+Some key things to understand here:
+1. Piping to a bash construct! This is advanced material, for reasons Dave will get into in future videos. But here, we get to talk about what happens in shell pipelines, not just with exec() to set up argv and argc for commands as in episode two, but talking about file descriptor inheritance and standard I/O. A core thing to understand in Unix/Linux scripting is the stdio, or standard input/output, model. Every process, at initialization time, can be expected to have three file descriptors:
+- standard input, on file descriptor 0,
+- standard output, on file descriptor 1,
+- standard error, on file descriptor 2.
+
+These handles can point to a terminal device, to a file, to a FIFO/socket, to /dev/null, or to anything else a file descriptor can point to. In a standard bash shell, all three point at your terminal.
+
+When you say: 'ls subdir | while read file; do ... ; done', you are telling bash:
+1. Spawn a subprocess called ls, with an argument of subdir. Attach its stdout to an anonymous FIFO.
+2. Spawn a second subprocess, a child of this bash shell. In that subprocess, do a while loop. Each time that while loop iterates, execute the 'read' builtin, with a single argument of 'file'. The standard input of this process is replaced with the same anonymous FIFO which was opened as stdout of the first process.
+
+Under the hood, the ls command is writing its output into the FIFO in chunks, typically 8 kb chunks although this will vary depending on your installation and on how the program you're running is compiled to do its writes. Its write of the next chunk blocks untl the last chunk is read on the other side of the FIFO--a performance consideration you need to consider, and the reason why GNU grep includes the --line-buffered switch, and the reason why awk gives you a means of flushing its buffers early. Dave hasn't gotten into those performance considerations yet as of this writing, but they're another reason why you suck at programming.
+
+Note here: There are only two subprocesses! The while loop and the invocations of the read builtin are all happening in a common subshell! This means that both the while command and the read builtin are executing in a common subshell, and stdin for both of those commands in the FIFO piped in from the previous process. Only one of the two commands is reading at a time, but neither one still has your terminal as its stdin.
+
+Each time 'read' executes, a single line of stdin from the shell is read, and is word-split. For as many arguments as you gave to read, single words are assigned to each variable in that argument. If your line has more words than you gave variable names as arguments, all remaining words are joined together in the last provided variable. (Note, if you use no arguments at all, just saying 'while read; do ...; done', you can access the line in the value $REPLY. This behavior can be read about in bash using 'help read'.)
+
+So, word splitting is still happening, just like in the first example, but before word splitting has a chance to happen, stdin is first being split on newlines, and bash is running through the quoted remnant of "$*" into the $line variable, after first shifting out any other words into other variables requested in your 'read' command. Consider the output of:
+- echo "c    a     b" | while read word line; do echo "<$word> <$line>"; done
+... to understand better what I mean here.
+
+(Note: If you don't know the default of 'IFS' on your system, try: 'printf "%s" "$IFS" | od -cx'. This gives an octal dump of the characters in that string, followed by an "end of string" null character. On my system, this includes a space, a tab, and a newline, in that order. Bash will split against any of those three characters, and when it has to join arrays as in $@ or $*, it will use the first of the three, the space.)
+
+If you've been following along carefully with the explanation Dave gave in the first two lessons, about how you need to understand how bash word splitting works (and therefore what its default separators for the "IFS" variable are) and how you need to test your scripts against unexpected input/output, you will already know the trick he has up his sleeve for you: newline in filename!
+
+Don't just watch the video and see what happens. Think, based on what you've read above, about what you think will happen. If your answer is that you will again get unwanted word splitting, you're correct.
+
+So, Dave is still showing that his globbing technique to match files is more durable than the input-reading mechanisms used in the 'cringe' scripts from Episodes 1 and Episodes 3. To understand what your script needs to safeguard against, you need to understand not just what 'ls' might output, if you're parsing its input, but also what globs match, and don't match. Dave's point here isn't "always use glob," although it might look like that if you're new to shell programming. His point is, understand the right tool for the job. 'ls' is specifically inadequate for the use case in the first two scripts because there's no perfect way in its output to differentiate between actual full filenames, and partial filenames containing integral whitespace.
+
+Globs offer tighter control, but they aren't the only tool that does. Other popular options, which Dave looks at in future videos but which do somewhat fall out of the scope of pure-bash programming, include GNU find and GNU xargs, which respectively contain the -print0 and -0 command line options, letting you separate your file list with nulls instead of with whitespace. This takes advantage of the fact that you do not need to expect filenames to contain nulls.
+
+So, why do you suck at programming, if you wrote a cringe script like the one in this video? Because you did not safeguard against unexpected output from the 'ls' command, and therefore got unwanted word splitting such that your loop iterated on things that weren't filenames.

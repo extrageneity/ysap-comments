@@ -1,0 +1,39 @@
+Episode 6 - Debugging Bash using DTrace
+
+This episode centers around a key thing about what makes you suck at programming: not understanding how to trace what your programs do below the level of your code itself.
+
+If you haven't heard about DTrace, you should be aware that during the last strange days of Sun Microsystems, before the acquisition by Oracle, the operating system Solaris was adding a number of revolutionary features which anticipated several key trends in the computing world years ahead of Linux. The most well known of these, today, is probably ZFS, but Sun also, with its containers and zones models, got toward the essence of containerization well ahead of software like Docker beginning to wrap the Linux CGroups functionality.
+
+But DTrace, also introduced by Sun in that era, is amazing and should not be slept on. It's available for Linux although, sadly, has not become a standard across all distributions the way systemd largely has. DTrace is for dynamic tracing, and is a way of tracing what you code is doing, not up in the code level the way you can get at using a debugger like GDB, and not even at the system call level like you can do with strace on Linux and truss on Solaris/Illumos, but across those levels and into the low-level kernel code itself, and all dynamically, only introducing probe effect when the traces you care about are enabled. 
+
+DTrace itself isn't quite a programming language in its own right, or at least wasn't the last time I looked at it, but very nearly is, implementing a pattern/statement language style much like that of awk. The pattern Dave shows here is a very simple version of it, with the first part of the pattern showing which tracing event to enable, the second part showing a constraint on events matched by that tracing event, and the third part showing logic to execute when a matching event fires. 
+
+Dave, in this case, is just looking at results of the exec call family, to prove to you that bash is spawning nine new processes out of three lines of code, and that his pure-bash equivalent doesn't spawn any new processes at all. So, what are the key concepts around this?
+
+1. fork() is a system call which programs use to create a new process.
+This process begins as an exact duplicate of the parent process, with all the same allocated memory, all the same file descriptors, just with a different process ID, a different parent process ID, and a different return code from the fork() call -- 0 in the child, the PID in the parent. The memory, until the child process starts changing things, even points at the same pages of RAM in the kernel, using a capability called "copy on write" to only allocate new pages in the child once either the parent or the child makes changes to the original page. 
+
+NOTE: Your implementation might not actually use fork(). Modern Linux kernels expose other system calls to do the same thing, notably including clone(), which do something similar to fork but permit different behavior.
+
+2. exec() is a system call which programs use to replace the program inside that new process with a different program.
+exec() and its variants are the system call which programs use to ask the kernel to throw out the program currently loaded into a process, and load a new one in its place. As /usr/bin/cut is a separate program from bash, we aren't just forking, we're doing a full exec. 
+
+I said "and variants" because in your system the exec system call might be named something else. The same system where I tested and saw clone() instead of fork() shows execve() instead of exec() -- and I've also seen exec64() on Solaris, although that was a very long time ago now.
+
+3. Most POSIX/Unix variants have some capability to trace calls like fork() and exec() where the work done by that operating system is a system call. Dave could have done that here, but instead is tracing proc:::exec-success events in his kernel, which are actually not a system call but are instead one of those lower level event breakpoints I was discussing in the introduction. If you're on Linux and are instead using strace, you can try a command like:
+  strace ff - bash -c date
+... and watch all the system calls that bash and its children execute. You can subsequently narrow this to only trace the calls you care about, or add additional switches to get timing on those calls.
+
+So, to sum up:
+- You will hear developers talk about 'fork and exec', which respectively mean 'adding a new child process' and 'causing that child process to be replaced by a new program'. Both fork and exec permit certain things (file handles, most importantly) to be inherited from the predecessor.
+- Your operating system most likely provides you the ability to do some form of call tracing, to see when your program forks or execs, when it does I/O, when it does memory management, or when it does anything else requiring the kernel to do low-level work. DTrace is probably the most based call tracing tool around, but there are many others, and if you want to become wizardly in the programming language of your choice, you need to learn the relevant ones.
+
+Do you really suck at programming if you don't know how to do that tracing, or don't know how to read about what information the tracers expose you to? Not necessarily. But at large companies, there is a specialized role, sometimes called a "Production Engineer," sometimes called a "Site Reliability Engineer," sometimes called other things, who has responsibilities for helping programmers understand how their code executes at this level, and how to make optimizations to that code." There are huge performance implications to what your code chooses to do, and this is true regardless of whether you're coding in a language like Bash, in something hyper-modern but still scripty like Python, in new compiled languages like Rust and Go, in legacy compiled languages like C and C++, even in Java and other bytecode languages sitting on top of the Java Virtual Machine. 
+
+Understanding how to analyze this behavior yourself doesn't just open up those things as career paths for you, it helps you understand how to change your code after the person who knows things that you don't tells you that your code is being wasteful with forks, or needs to flush input buffers more frequently, or needs to stop swallowing I/O errors, or doing one of the literally hundreds of other things that attachable tracers like DTrace, strace, gdb, etc. can teach you. Getting good isn't just about learning all the patterns in your language, it's also about learning how those patterns exercise the systems your patterns abstract away.
+
+For an example of how truly deep you can dig into program performance with access to kernel dynamic tracing like Sun provided, check out the old Bryan Cantrill video from 2008, of Brendan Gregg shouting into a JBOD disk array in a data-center while they were tracing its I/O performance, using FishWorks, a tool built on top of DTrace and its underpinning technologies: https://youtu.be/tDacjrSCeq4?si=Z4B5L6bmk_b4x9uq
+
+There's a ton to learn but even simple programs like the one Dave showed in episode 5 and then performance-analyzed here in episode 6 have stuff to teach you. Don't be afraid to dive deep.
+
+Happy tracing!

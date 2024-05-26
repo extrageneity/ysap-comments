@@ -1,0 +1,109 @@
+Episode 7 - You Should Read the `bash` manpage
+
+Key concepts from this episode:
+1. 'man bash'.
+Dave says to read it. I'll come back to this at the end, but for now I want to mention a couple of things if you aren't familiar with man pages yet.
+
+First, bash and other GNU programs nearly always come with two documents: the man page, and the reference manual. The man pages are notoriously dense, nearly always giving just the information you need without examples, background information, or other coloring context. This is not because GNU developers are sadists. Rather, it's because they've written a second document for when you need a gentler introduction to the material. This second document, in GNU's Texinfo format, is usually (depending on your Linux distro) available via 'info bash' rather than 'man bash', and is a digital copy of the Bash Reference Manual. You can instead read a copy of that on the web at gnu.org. I just confirmed that on MacOS, if you're running homebrew, you can do 'brew install bash', 'brew install texinfo', and then, in your homebrew environment's bin directory, 'texinfo bash' and get a copy of the relevant reference manual for bash. If you find the man page too dense on initial reading, please consider reading this instead.
+
+Second, in order to convey information densely, man pages use a particular syntax to describe usage of commands. This syntax is related to a very dense specification I don't recommend you read called EBNF. The Just Enough version of it:
+- When you see a word inside angle brackets, like <this>, it means that the word describes a required argument to a command.
+- When you see a word inside square brackets, like [this], it means that the word describes an optional argument to a command.
+- These can be used together, for example, the 'git commit' command contains in its manual: [ -m <msg> ], which means that you can optionally supply a -m switch, which takes a single required argument, the message to be committed.
+- When you see a ... next to either an angle-bracketed word or a square-bracketed word, that ellipsis means that more than one of that preceding argument are permitted. For instance: cp <file1> [ ... ] <destination>
+- In some but not all man pages, sometimes a required argument will simply be underlined, instead of using the angle brackets.
+
+And yes, you do suck at programming if you don't at least occasionally read reference manuals and man pages for the stuff you're using. You can do a lot just with Google and some generative AI to give you hints, but if you ultimately want to do what this video series is teaching you to do, which is learn the lessons bash has to teach you about how to think like a programmer, you do need to be reading the core documentation and absorbing things from it.
+
+2. shell builtins, general.
+When you type a command line in bash, bash resolves the word you enter into a command in one of four ways: an alias, a builtin, a function, or a path to an external executable. 
+- An alias (by default, only available in interactive shells) just replaces the command you type with the text of the alias. 
+- A shell builtin is provided by the bash program itself.
+- A function is a block of shell functions to be executed, with or without arguments, when you call it.
+- An external executable is a separate executable program launched by bash using the fork() and exec() family of system calls.
+
+3. aliases vs functions
+An alias is something you define, typically in one of your shell profiles such as .profile or .bashrc, intended to be a shortcut for a command, or to supply default arguments to a command. I don't love use of aliases, and you won't see Dave talk about them much because for the most part he's showing you how to use bash for programming, not how to use it interactively. You can cause aliases to be honored in your scripts via one of the shell options if you want, but there's really not much point.
+
+A function is basically a small bash script within your script. Dave does talk about these fairly extensively as time goes on, so for here I'll just say that if you review my interactive shell environments, instead of seeing something like:
+    alias ls='ls -fAB'
+... you would see something like:
+    function ls() {
+      ls -fAB "${@}"
+    }
+
+You won't see either one of these, because I don't like adding default switches to commands, but this is often how I do things like that. An example of where I do it: wrapping the CLI interfaces to the APIs for github and gitlab, so that I can load the environment variable containing my API token from a password manager instead of storing it in cleartext on disk.
+
+4. Ways of getting around bash default handling for commands.
+To bypass an alias, just precede the command with a \ character.
+
+To bypass a shell function, precede the command with the builtin 'command'.
+
+To bypass a builtin to access an executable program, you can do:
+  env <progname>
+
+To understand what this is doing, do 'type env' and see what comes up, and then 'man env'. Does this "waste a fork" in a cringe way? 
+
+In my opinion, no! exec() of a new program by a process isn't what's expensive, fork() of a new process in which that program executes is the costly part. You fork() once to spawn env, then exec() twice, once to load env, and then a second time to load your program. env is cheap and fast to run so that part costs you almost nothing.
+
+5. `type` vs `which`.
+The which command is nearly always a shell script. It's written in csh (ew) on some systems, and in Bourne Shell on others. But it's manually walking your $PATH, using test operations to see if there's an executable matching the program name, and then prints the path to that program back to you.
+
+You can get the same syntax out of the type command in two similar but subtly different ways:
+- 'type -pa <command>' will print, once per line, all commands in your $PATH matching the command name.
+- 'type -P <command>' will print the first command in your $PATH matching the command name. This differs from 'type -p <command>' in that with the lower-cased version, if a colliding builtin exists, stdout will be empty.
+
+6. The bash 'help' builtin.
+Dave shows an example of a builtin overriding a pathed command, echo.
+
+To read documentation for the echo builtin, you have three options: 'help echo', 'man bash', or 'info bash'.
+
+To read documentation for the echo binary, you have 'man echo'.
+
+While you're still learning bash, it's important to understand whether your commands are builtins or binaries, so that you're accessing the right documentation for them. You might even want to consider a function like this:
+    function smartman() {
+      (( # < 1 )) && {
+        echo "Usage: smartman <command>" >&2
+        return 1
+      }
+
+      case "$(type "${1}")" in
+        alias)
+          echo "${1} is an alias: $(alias "${1}")"
+          return 0
+          ;;
+        builtin)
+          echo "${1} is a builtin, here is help ${1}"
+          help "${1}"
+          return "${?}"
+          ;;
+        file)
+          echo "${1}" is a file, here is man ${1}" 
+          man "${1}" 
+          return "${?}"
+          ;;
+        function)
+          type "${1}"
+          return 0
+          ;;
+        *)
+          # this would have printed an error message from type
+          return "${?}"
+          ;;
+      esac
+    }
+
+(Note, I haven't tested this.)
+
+7. 'man bash' revisited.
+
+There are a ton of useful sections of this man page, but I'll tell you some of the ones I revisit most often:
+- The section titled 'Parameter Expansion', describing all the ways you can expand a variable once you've assigned it. Writing pure bash programs, this is fairly essential.
+- The whole section titled 'REDIRECTION', describing all the different ways bash can pass data around using file handles. As you try to get into fancier scripting some of this becomes invaluable.
+- The section of 'SHELL BUILTIN COMMANDS' describing what all the 'shopt' options do. Annoyingly, 'help shopt' does not include these for me.
+- In the 'PARAMETERS' section, the subsections 'Special Parameters' and 'Shell Variables', respectively describing things like what $# and $? mean, and what all the special environment variables bash honors are. (This excludes some which are just generally supported by Unix/Linux, such as LD_LIBRARY_PATH and TZ.)
+- When I'm setting up a shell on a new OS/distribution, I often carefully read the section on 'INVOCATION', re-learning the order of initialization files for things like .bashrc and /etc/profile, and then read through all of the installed OS defaults to understand what I get automatically on this host vs what I get on others.
+
+Finally, as a first time reader looking to better understand how bash interoperates with fork() and exec() or its modern variants, you might also want to check out the section titled 'COMMAND EXECUTION ENVIRONMENT', showing how things are passed around between bash, its subshells, and its executed programs.
+
+Happy RTFMing!

@@ -1,0 +1,23 @@
+Episode 8 - Unix Shell Builtins vs. External Commands
+
+Key concepts from this episode:
+- Demonstration of working interation between aliases, functions, shell builtins, and external commands.
+- Use of the type command to get an explanation of how bash resolves a given simple command.
+
+I actually covered most of this already in my comment from Episode 7. Rather that completely re-iterating everything from that comment, I'll instead give some errata here.
+
+1. General errata.
+- The four command types Dave enumerated as possible resolutions by bash are the four categories of "simple command" that bash knows how to execute. You can get a single-word descriptor of which command type bash will resolve a word to by doing 'type -t <word>'. See 'help type' for the possible answers.
+- Dave shows the 'which <word>' command as the best way to see which executable bash would execute out of $PATH. In my opinion this is very slightly cringe; modern bashes give 'type -P <word>' and 'type -Pa <word>', which respectively dump the first executable from $PATH matching the word, and all executables from $PATH, one per line. This doesn't just save a fork, it also benefits from cases where your current $PATH will change in the shell executed by the `which` command, which might not even be bash depending on your system.
+
+2. alias errata.
+- 'shopt -s expand_aliases' is required to make aliases work inside your scripts. Without this, they only function in interactive shells.
+- \<word> (preceding a word with a bashslash) will bypass any alias corresponding to that word.
+
+3. builtin errata.
+- Bash provides builtins called 'enable' and 'disable' which can be used to enable or disable certain bash builtins at runtime. If you want an executable to win out over a builtin with the same name, and don't want to give the path to the executable, disabling the builtin is one option.
+- Using enable, it's possible to load builtins that are not part of bash itself, via dynamic linking and the BASH_LOADABLES_PATH environment variable. If Dave ever gets to talking about this in YSAP, I probably won't comment because that's way out of my depth, but Googling on the subject just now you can apparently write the builtins in Rust using a crate called bash_builtins. That might scratch some of you in spots you didn't know you were itching.
+- Bash documentation divides builtins into two broad categories, 'bash builtins' and 'bourne shell builtins'. It's worth educating yourself as to which is which. Unixes with non-bash shells get more and more rare but you do still occasionally encounter them, especially if you work with embedded systems and rackable appliances. The best place to read about the differences between these is in the Bash Reference Manual, which you can find at https://www.gnu.org/software/bash/manual/bash.html or by running 'info bash' on many bash installations. (Chapter 4 as of this writing.) 
+- Also slightly cringe in Dave's example, he wants to access the echo builtin from inside a function but does this with 'command' which can match either a builtin or an external command, instead of using 'builtin' which explicitly resolves to a builtin.
+
+External commands and functions are both going to be covered more in later episodes so I'll skip errata for those for today. Happy scripting!

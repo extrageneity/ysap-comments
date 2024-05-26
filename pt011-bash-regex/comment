@@ -1,0 +1,34 @@
+Episode 11 - Regex Builtin to Bash
+
+Core concepts in this episode:
+- compound conditional expressions using [[ ]] instead of simple test conditionals using [ ]
+- the =~ operator in compound conditional expressions
+
+Topic 1: Compound Conditional Expressions.
+Compound conditional expressions are bash expressions on the form of: [[ <expression> ]] 
+They're described in the bash man page at the 'Compound Commands' section of the SHELL GRAMMAR section, and are then expanded on under CONDITIONAL EXPRESSIONS. Compound conditional expressions are part of the basic bash grammar, and differ from the expressions accessible via [ <expression> ]. Note here that '[' is a bash builtin which does the same thing as the test builtin, but requires a closing square-bracket.
+
+The conditional expressions enclosed in [[ ]] can be thought of as a superset of the expressions enclosed in [ ], with =~, which does regex matching, only supported in the [[ ]] version.
+
+This operator accepts extended regular expressions as described in the regex(3) man page, which are the flavor of regular expressions used by egrep and grep -E, as opposed to the more popular PCREs (perl-compatible regular expressions) which most modern languages implement. A key thing to understand is that you do get access to match groups, and that the matching fields can be seen after =~ evaluation in the BASH_REMATCH. Dave covers this in his example too.
+
+Topic 2: The =~ operator for regular expression matching.
+The =~ operator takes a string on its left-hand side as input text to be parsed by regex, and takes the right-hand side to be a regular expression. It's important to note here, anything quoted, including variable expansions, is treated as literals by the regex parser, not as regular expressions. 
+
+Return codes from the =~ operation are:
+0 - the text matched the regex
+1 - the text didn't match the regex
+2 - the string provided as a regex could not be compiled as a regular expression.
+
+A sample command which worked for me in demonstrating this:
+	re='^(uid=.*) (gid=.*) ?(groups=.*)?$'
+	[[ "$(id)" =~ $re ]]
+
+After executing this, I had a $BASH_REMATCH array where [1] had my uid, [2] had my group id, and [3] had any supplemental groups assigned to me. There's also a [0] which contains the entire matching string. 
+
+It's worth noting, $BASH_REMATCH is a global variable even when you call it from functions.
+
+End notes:
+This is the YSAP episode which persuaded me that I should begin to replace all use of [ ] with [[ ]] in my scripts, both in bash and in zsh.
+
+Happy matching!

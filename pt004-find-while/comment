@@ -1,0 +1,33 @@
+Episode 4, Piping `find` to `while`.
+
+Key concepts from this episode:
+1. Continuing to show the "unintended consequences of word splitting" that previous episodes have centered around.
+2. Showing that one workaround for this is changing the delimiter your input command uses, and then specifying that delimiter in the 'read' command via the -d switch.
+3. Using the null chararacter (which is the default Unix end-of-string marker) as a delimiter.
+4. Revisiting the 'pipe to a bash construct' example from episode 3, this time showing one of the common pitfalls of doing so: data modifications made in a subshell cannot be seen either in other subshells or in the parent shell. This problem isn't unique to bash, it actually happens between parent and child processes in any programming language that uses a fork() based model for threading. fork() and what it does is discussed in Unix/Linux manuals alongside exec(), because a fork() often immediately precedes an exec().
+
+fork() is a system call which causes the Linux operating system to make an exact duplicate of the running process, with all the same memory pointers, address table, code images, call stack, everything. Some key differences are: that the duplicated process has the original process as its parent; that the duplicated process has a duplicated address table with copy-on-write memory; that in the parent process, the fork() system call returns the child PID, and in the child process, the call returns 0. (You often see in C or Perl code something like: if(pid = fork()) { ... parent process logic, often including a wait() on the pid } else { child process logic }.) 
+
+Copy-on-write memory is what we're seeing in play here. The child process--the bash subshell executing both the while loop, and the one read command per iteration of that loop--has inherited the $i variable from the parent process, but has initialized it to 0. In the bash subshell, when you modify $i, the Unix/Linux kernel causes that child process to get a fresh copy of the memory underlying $i, and any modifications to that variable are only applied to the new copy of $i which exists in the subshell itself. When the subshell terminates and the parent process resumes execution, the original $i, initialized to 0, is still intact, having never changed at all.
+
+Dave's main point here is that choosing the right approach in a bash script (in this case, getting a list of files via glob instead of via shell-out) lets you have a simpler script than you need to make with the wrong approach. The theme of this channel is You Suck at Programming. Recognizing when it's time to refactor toward simplicity is one of the ways you can learn to suck less.
+
+But, for fun, let's talk about some of the other ways we could have preserved that find+while read solution while absorbing Dave's new requirement to count the printed files:
+
+1. Instead of pipelining the find command into stdin of the child process, we could have instead redirected stdin from a subshell containing the find command. This looks like:
+while read -d ''
+do
+  echo "file is <$REPLY>"
+done < <(find . -type f -print0)
+
+This <(command) syntax in the EXPANSION section of the bash manual under the heading 'process substitution'. The command is executed in a subshell, with its stdout sent to a named FIFO, /dev/fd/<number>, and the path to this named FIFO replaces the construct on the command line, such that the while loop is reading its input from a special file, and still executes as the parent shell. This instead executes the find command in a subshell, but since we're already exec()ing from bash to find anyway, this is a distinction without a difference.
+
+2. The simplest fix, if you're running a new enough bash to support it, is to do 'shopt -s lastpipe', which causes the last expression in a pipeline to execute in the parent shell instead of a child. This is not available in the bash 3 which still ships on new versions of MacOS, but is available in the bash 5 you see on most recent Linux distributions. 
+
+3. You can spawn the find command as a coprocess. That's too advanced a discussion to have in today's comment.
+
+4. The most cringe solution which occurs to me would be to redirect 'find' output to a file, and then redirect the loop's stdin from that file, and then (hopefully) delete the file after. Just don't do this.
+
+So, what did we learn today, in general? You can pipe to bash constructs, but doing so is often a sign that you should consider refactoring your script. It's not always obvious from context which parts of your bash code are executing in the parent shell versus in a subshell, and you need to understand what things won't work the same way in a subshell that they work in a parent shell. And, finally, the more completely you understand behavior of the fork() and exec() family of calls, the less surprising you'll find any of this when it trips you up in bash.
+
+Happy scripting!

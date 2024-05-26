@@ -1,0 +1,52 @@
+Episode 5, Bash `read` command instead of `cut` and `tr`.
+
+Key concepts from this episode:
+1. Common bash use case: parsing colon-separated fields.
+The data.txt file presents a table with colon-separated fields. This is a fairly common pattern for scripting in the Unix/Linux world, especially because /etc/passwd, /etc/group, and other key system files produce tabular data in this format. (Note: On systems which support it, 'getent passwd' is often superior to doing 'cat /etc/passwd' as it can bring in data from other user databases which are not represented in the local password file. This isn't universally supported, even on given Linux distros, as not every password source supports enumeration in this way. But, cool stuff to look at.)
+
+2. Interesting wrinkle: Variable number of fields per line.
+The format in this file, where a field separator is also used, unescaped, as integral text in the final field, is a little bit perverse, and I wouldn't recommend implementing it for any new patterns. (You should generally be specifying modern data files in something like JSON or YAML. Even from the command line there are now good options for parsing that structured data, such as jq and yq.) But being able to handle cases like this is important when they crop up.
+
+3. Introduction of $(command) syntax.
+In Dave's cringe script, Dave here is giving interpolation of subshell output into string expressions using $(command) instead of `command`. Same general concept--the text inside $(), as well as the $() itself, are replaced with the output of the command. You have to be careful about whether or not to quote $(), as in some contexts such as in a for/while loop, the result will be subjected to word splitting, but in other contexts, such as the variable assignments Dave does here, they are not. In my own scripting I would have done:
+  desc="$(echo line | cut ... )" 
+instead of omitting the double quotes, but this is pedantic, not actually required for scripts to work as intended.
+
+4. Introduction of cut(1), a standard Unix/Linux utility.
+The cringe script is shelling out to the 'cut' utility, which is part of the POSIX specification of command line utilities to be included in any Unix or Unix variant system, and is probably present on 100% of systems where bash is present (except for narrow corner cases like git-bash in Windows, or in intentionally tiny container images). Especially in old/historical Unix distributions, this was a very common tool for doing string splitting, especially because bash predecessors such as the Bourne shell and the Korn shell were not initially very good at doing that natively. It's important if you will be maintaining legacy shell scripts to be comfortable reading and using cut syntax. (I personally prefer awk for this kind of work, and you also see a lot of that in legacy scripts, but perhaps not as much as you see cut or sed.)
+
+5. Excessive forking to child processes considered harmful.
+Dave points out that this script is wasteful in its solution, because it's spawning 3 fork/exec calls to create all the invocations of cut needed to do the work. This is a good habit to get into, because shellout process overhead is a big thing that can drag down the performance of a script where you're aiming for fast execution time and low system utilization. On a completely stock, minimal Unix/Linux kernel, forks aren't necessarily very expensive, but not only do they add up, many modern/real-world installations are running with a significant degree of security/audit functionality enabled, both for governance/compliance/data-protection reasons, and sometimes for system accounting in systems where you're paying for (or are quotaed on) process utilization rather than for host uptime.
+
+6. Temporarily reassigning an environment variable as part of a bash expression.
+Let's break this down in a little more detail. In bash, a while loop works like:
+while (expression); do (commands); done
+
+The argument to while, in this case, is the expression:
+IFS=: read -r name id desc
+
+Here, 'read' is a bash builtin, '-r name id desc' are all arguments to the builtin. What's 'IFS=:' about?
+
+IFS, the bash field separator, is initially set to a value of $' \t\n', telling bash that when it splits words, it should use a space, a tab, or a newline as acceptable separator characters, treating runs of one or more such characters as a word boundary. It also says that when bash is rejoining words (as in expansion of $*) it should use the first character in IFS as the padding between words.
+
+Reassigning a variable during a shell expression changes the value of that shell variable only for the single invocation of that expression. An easier to understand example of this uses the 'TZ' variable. Compare outputs of the following:
+TZ=UTC date
+TZ=US/Central date
+
+IFS is a really elegant thing to change in this manner, especially because it saves you the trouble of having to change it back after you do something with it. I haven't been using this trick often enough in my own code but verifying its behavior in the course of writing these comments has persuaded me that I should start using it more.
+
+Other common real-world use cases for variable assignment within a bash expression include things like tweaking LD_LIBRARY_PATH for a single command execution.
+
+7. Redirecting stdin for an entire while loop.
+Dave had shown in previous scripts how to pipe output of a command into a while loop, and showed why doing that is sometimes cringe. Here, he instead sends stdin to the while loop from a file. This does, if you're wondering, happen in the main shell rather than in a subshell.
+
+Conclusions:
+This episode shows how doing bash-native parsing of text can not only speed up your program execution, but leave you with a more expressive and readable program. Skip around in the video, looking at Dave's "cringe" and "based" script versions. Which one would you rather re-open six months after writing and have to debug? One amazing thing about bash is that the most performant script is also often the shortest and easy to read. This isn't always true in other languages.
+
+Footnote:
+Dave mentions 'tr' in the episode title but doesn't show its use in the script. It's another powerful utility and is worth understanding how to use. I probably use it the most often to convert nulls to newlines in parsing of /proc/(pid) files. In DevOps jobs you often find yourself looking at very long command lines, especially for services launched in Java with very long classpaths. The following is a beautiful 'tr' trick for that on Linux:
+	tr '\0' '\n' < /proc/(pid)/cmdline | cat -b
+If you don't have a long command line to try that on, you can also try:
+	tr '\0' '\n' < /proc/(pid)/environ
+
+Happy scripting!

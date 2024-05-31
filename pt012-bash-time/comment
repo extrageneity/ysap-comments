@@ -1,0 +1,52 @@
+Episode 12, Order of commands on the Unix Shell
+
+Key concepts in this episode:
+- forking sudo, how does it work?
+- time and resource usage metrics
+
+TOPIC 1, sudo and what it does
+We've talked in my comments on previous episodes about fork() and exec(). sudo is one of many utilities which starts and then does an exec() call, passing control on to a command you specify, just like bash and env both do. sudo is different in one key way, which is that the binary itself is owned by a privileged user, typically root, and is typically given permissions including the setuid bit. This bit, when set on a program, causes the program to execute with the uid of the program's owner, rather than the uid of the user who executed it. This means that any utility with 'setuid root' permissions, including sudo, always executes with root privileges. sudo very carefully guards how it uses these privileges before deciding to exec() to the program you specified. It can further change its own uid, lowering privileges back down from root to a different user, if you ask it to do so. 
+
+Dave gives two examples in this episode:
+- time sudo echo hi
+- sudo time echo hi
+
+Each calls sudo, which operates with setuid permissions in both cases. Dave already summarizes the difference: in one, the command line passed to exec() by sudo (after doing its security checks and possibly after changing uid a second time) is 'echo hi', and in the other, the command line is 'time echo hi'. 
+
+In 'ls -l', setuid permissions on a program replace the 'execute' bit in the first permissions with 's', for example showing '-rwsr-xr-x' instead of 'rwxr-xr-x'.
+
+TOPIC 2, time and resource usage metrics
+One of the keys to good shell scripting is learning how to time out your shell operations. How slow is too slow? How do you measure that?
+
+One very common answer is the 'time' builtin to bash. As Dave demonstrates, it reports back real time vs user CPU time vs system CPU time. 
+
+What are the differences between these three metrics?
+- real time is the actual elapsed clock time between when your process started and when it ended.
+- user time is the amount of time your process spent on CPU performing userspace logic (very broadly, math) 
+- system time is the amount of time your process spent on CPU performing kernel logic (also very broadly, math abstracted away from you by system calls) 
+
+Real time will often be greater than the sum of user time and system time, rather than exactly equal to it; this is because certain activity, such as network I/O and even in some cases disk I/O, is not accounted for as CPU usage. 
+
+Real time can also be less than the sum of user and system time, especially if your program is CPU-intensive and utilizes multiple threads concurrently. For a simple example of this, you can do something like:
+	time ((tar cfp - /usr/bin | gzip -c - | wc -c > /dev/null) & (tar cfp - /usr/bin | gzip -c - | wc -c > /dev/null) & (tar cfp - /usr/bin | gzip -c - | wc -c > /dev/null) && wait)
+
+This example spawns three bash pipelines in parallel, each one counting how many characters there are in a gzipped tarball of /usr/bin on your host. Since compression is computationally expensive, user time in your use case will exceed real time. On a system with pathologically complex ACLs, system auditing, etc., even system time might be high! (Note, this use case, tar to stdout, can be extraordinarily useful in another context: streaming file sets over ssh when interoperating with sudo. Rsync is powerful but getting it to do the right thing when you need to log in unprivileged and then escalate to root can be more trouble than it's worth.)
+
+All of these usage metrics are made available to either bash or to the external time utility that ships with your OS via a system call named getrusage(), or via one of the wrapping functions which exists for it such as the wait4() system call in Linux. 
+
+If you read your OS manual for that getrusage() system call, you will see that user time and CPU time are far from the only resource usage metrics available. This is why the OS-specific utility in /usr/bin is so much more complicated than the equivalent bash builtin. Bash, which is designed to be portable between many systems, only assumes that getrusage() will implement what POSIX, the standard Unix specification, says it should implement. Both MacOS and Linux offer a variety of other metrics, especially around how the kernel is handling the memory demands of the process, and how the process is interacting with the inter-process communication subsystems. These can be critical sources of "ghost" latency which isn't part of any single system call but also isn't attributable to userspace CPU. You may never need to know that stuff for shell scripting but it comes up faster than you think if you're running anything performance-sensitive in production.
+
+This is a case where sometimes it's cringe to use the bash builtin instead of the OS equivalent command. But, very often, the builtin still gives you enough to go on if your process is running slowly.
+
+But, maybe more importantly, this difference between the builtin and the system version of the utility also demonstrates something which is very often true in computing disciplines: Often, to get portability, you have to give up either observability or performance. Learning what bash is doing when it does things is about learning how to work closer to the metal so that you can get more out of it. 
+
+CONCLUSIONS
+This episode had no cringe program and no based program. So, how does it demonstrate why you might suck at programming?
+
+First, if you have any confusion at all about what sudo does, or about how it operates, your system privileges exceed your knowledge of how to operate safely. Learn what UID and EUID are in a Unix/Linux concept, how the setuid permission on a file owned by root interoperates with that, and _exactly_ how sudo interoperates with the other programs that execute it, and that it executes.
+
+Second, to be good at programming you need to understand how to tune what you're programming. You can't meanigfully tune what you haven't measured. To measure usefully, you have to understand how to collect metrics, what metrics you're collecting, and what those metrics are describing to you about how your program operates. Dave is demonstrating here that reversing only two words in a command can change both _which_ metrics you're collecting--time from the bash builtin, vs time(1) with its different output--and what those metrics signify. One measures full execution including sudo overhead, the other measures only the command which was ultimately executed with root privileges. Which were you trying to measure, and why?
+
+I used to tell my work trainees, long ago, Unix is not for the innocent. This video illustrates what looks at first to be a very simple concept, but it's one which hides a lot of complexity, risk, and power within it. When this example makes full sense to you, you'll be a lot closer to unlocking not just the power of the bash shell, but of the entire operating system underneath it.
+
+Safe travels!

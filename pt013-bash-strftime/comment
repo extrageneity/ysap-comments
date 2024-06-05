@@ -1,0 +1,60 @@
+Episode 13, Formatting Dates with `strftime` in Bash
+
+Key concepts in this episode:
+- Unix epochtime, sometimes called time_t
+- strftime from the standard C library
+- the bash printf builtin, EPOCHSECONDS, and EPOCHREALTIME.
+
+PART 1: Unix Epoch Time, or the impending computer apocalypse that may never happen.
+
+In computing, an 'epoch' is the zero-date on the clock and calendar. Different computer systems have different epochs, but the standard Unix epoch is midnight UTC (originally, GMT) on January 1st, 1970. The standard C library defines some functions for dealing with time relative to this epoch, including a data type called time_t, which was originally established as a signed 32-bit integer. This give a time horizon, from epoch until integer overflow, of 2 to the 31st power in seconds, which is 0x7fffffff seconds in hex, or about 2.1 billion seconds in decimal. To see the exact moment when we exhaust this allocation of seconds using the commands Dave demonstrates in this video, you can do:
+        $ TZ=UTC printf "%(%c %z)T\n" '0x80000000'
+        Tue Jan 19 03:14:08 2038 +0000
+
+On a system with a bash shell built using a 32-bit time_t, this won't print that date, it will instead print this one:
+        $ TZ=UTC printf "%(%c %z)T\n" '-0x80000000'
+        Fri Dec 13 20:45:52 1901 +0000
+... because at that point, the 32nd bit in the integer, used to denote positive or negative, flips from 0 to 1. So, instead of being 2147483647 seconds after the epoch, you're -2147483648 seconds before it. The bitwise representation of -1 as a 32-bit signed integer is 0xffffffff.
+
+So, in less than 14 years, computers running Unix and Linux based binaries built with a 32-bit time representation will suddenly begin thinking the date is 139 years and change earlier. This is either going to be apocalyptic or no big deal, depending on how many mission-critical systems dealing with time are still building binaries around the Unix epoch in 32 bits without handling for integer overflow.
+
+PART 2: strftime, or how we convert from Unix epoch seconds into text humans understand.
+
+strftime is a C library function out of the standard C library specified as part of Unix and Linux. The function name means 'string format, time', and takes a printf-style format string where percent-escaped tokens are replaced with formatted values derived from the arguments, and literals interpolated between the tokens are retained as themselves. Unlike printf and its friends, where each token generally gets one distinct argument, strftime formats all its tokens with data taken from a single argument.
+
+This concept, that your computer system has an epoch, and a "clock tick" length, and that time is measured as an integer, the number of clock ticks since the epoch, is essential to understand if you're going to program on computer systems. It's how you do arithmetic involving time. Convert a date into seconds since epoch, using a library which understands leap seconds, time zones, and the rest, do integer math, then either convert back, or convert from clock ticks (seconds) to the units you would prefer to deal in (hours, days, years). 
+
+If a language or an operating environment defines an epoch, it typically also provides a formatter to convert a time value (a count of clock ticks) into text, and often to do the reverse--produce a time value from text describing it.
+
+Not all computer systems share the Unix epoch time. The Java virtual machine, for instance, shares the same epoch date/time as Unix, but counts out from that date in microseconds rather than in seconds. Not all computer systems measure their clock ticks in seconds or even microseconds. All this is why textual representations of dates need to be not just human-readable, but computer readable. There is an entire standards document ISO-8601, which discusses this, as well as various RFCs including 5322 (which replaced 2822, which replaced 822) which borrow heavily from ISO-8601. For this reason the best practice is generally to store and transmit dates as strings rather than as epoch seconds.
+
+PART 3: 
+
+I'm not actually a fan of how bash handles date and time manipulation, burying a format string within a format string. There's a certain logic to it, but I just don't love it. It's different in zsh, and the differences (including the presence of a direct command called strftime, which offers a command line switch which reverses the behavior of the function, such that it takes a formatted time string as its argument, and outputs the epoch time) are one of the reasons I decided to stick with zsh as my own shell environment when I first decided to start operating in it.
+
+To pick up where I left off in part 2, To get bash to render epoch seconds in the standard format for this, you want: %(%FT%T.000000%z)T which produces output like this:
+        $ TZ=UTC printf "%(%FT%T.000000%z)T\n" -1
+        2024-06-05T02:59:08.000000+0000
+
+In the above, %F gives the date in year, month, and day format, the T is a literal separating the date from the time, %T gives the time in hours, minutes, and seconds, I have hardcoded .000000 because bash strftime doesn't deal in microseconds, you have to patch those in separately from $EPOCHREALTIME if you want them, and %z gives the timezone offset from UTC in hundredths of hours. You can give 'Z' (or "Zulu time") instead of +0000 to denote UTC, and you can omit microseconds entirely, and date parsers from stuff like Splunk and Python will generally still be smart enough to auto-ingest it.
+
+EPOCHTIME and EPOCHREALTIME are special variables in bash, until you assign then as normal variables, bash instead assigns them any time you expand them in a shell expression. You can see the effects of this by comparing repeated executions of:
+     echo $EPOCHSECONDS $EPOCHREALTIME
+with repeated executions of:
+     declare | grep EPOCH
+
+There are a few other such variables, which bash treats specially unless you start messing with them, including BASHPID, DIRSTACK, RANDOM, and a number of others. The man page has a good list of them. This is mostly trivia but if you do start seeing strange behavior, be conscious of the possibilities here.
+
+Note about $EPOCHREALTIME: it only gives me microseconds on some platforms. When I use a Homebrew-built bash on MacOS, I instead get it in nanoseconds--but the man page warns that at those time scales, it's hard to use the data reliably because bash can't get it from the kernel for free, it has to do floating point arithmetic. There are times $EPOCHREALTIME can be helpful, but generally even a single microsecond is too much precision, in practice using a shell language like bash you generally want to round/truncate to something like milliseconds or even tenths of seconds in some cases. So, don't assume that you will always get exactly six digits after the dot; only use as many digits of precision as you need, and be conscious that taking extra precision is going to create inherent variance in your datestamps. There are also security implications to exposing too much microsecond/nanosecond data from your system to other users--a general topic called a "timing attack." I won't discuss that here, except to say, if you find yourself wanting to use EPOCHREALTIME, think carefully about whether or not you actually need it, and why.
+
+CONCLUSIONS:
+
+To be a more based and less cringe programmer, you need to understand how to store time, how to output it, how to do math with it, etc. Understanding epoch is an important part of that, and understanding enough as a programmer to understand that any language, even a shell language like bash, should include native ways of interacting with time functions instead of having to shell out to the date utility, is a good instinct to build. As you orient yourself to a new language, whether it's new or old, understand that time functions almost certainly exist and that it's going to serve you well to learn where they are and how to use them.
+
+Understand also that epochs end or change. One of the strangest outages I ever dealt with supporting a production system happened when a SQL database server my employer operated had its internal epoch change/reset because it ran out. Arithmetic comparing two SQL based dates produced unexpected results across the epoch boundary, and it was extremely vexing/confusing because the epoch itself was not easily visible to SQL developers! Whatever language you're writing in, even bash, you need to consider what happens if either the way time-since-epoch is encoded cannot represent a time you're dealing with, or if the meaning of the epoch changes at some point, either on your system or on systems it's talking with. 
+
+You can insulate yourself against a great deal of uncertainty here by taking care never to store values as raw offsets from local epoch, but instead always reformatting them into some widely understood text based date string. Eric S. Raymond wrote in The Art of Unix Programming that in writing programs, be generous in what you accept, rigorous in what you emit. 
+
+Understanding how to use strftime in bash and related languages is a great way of cleaving more closely to that principle.
+
+Happy timing!

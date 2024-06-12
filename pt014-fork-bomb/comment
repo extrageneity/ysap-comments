@@ -1,0 +1,77 @@
+Episode 14, Explaining a Unix Forkbomb
+
+Key concepts from this episode:
+- bash function naming expanded
+- how the & operator interacts with the | operator
+- ulimit, systemd, and other safeguards
+
+PART 1, BASH FUNCTION NAMING EXPANDED
+Dave includes a good breakdown of what this is actually doing in the video itself. Rather than covering that here, I'll discuss some things that he only mentioned briefly.
+
+The first cool trick in this? Dave uses a function named : (the colon character) rather than something using the traditional character list. Two things to talk about here. 
+
+First, : is actually a shell builtin, which is a no-op function. So the name Dave chose for his fork bomb is a command you might actually see innocuously in scripts.
+
+Second, what characters are actually allowed? To suck less at programming, let's check the docs! The Bash Reference Manual has this in the clearest language.
+
+From Chapter 3.3, Shell Functions:
+	Functions are declared using this syntax:
+		fname () compound-command [ redirections ]
+	or
+		function fname [()] compound-command [ redirections ]
+
+	(snip)
+
+	When the shell is in POSIX mode (see Bash POSIX Mode), fname must be a valid shell name and may not be the same as one of the special builtins (see Special Builtins). In default mode, a function name can be any unquoted shell word that does not contain ‘$’.
+
+From Chapter 2, Definitions:
+	name
+		A word consisting solely of letters, numbers, and underscores, and beginning with a letter or underscore. Names are used as shell variable and function names. Also referred to as an identifier.
+
+	word
+		A sequence of characters treated as a unit by the shell. Words may not include unquoted metacharacters.
+
+	metacharacter
+		A character that, when unquoted, separates words. A metacharacter is a space, tab, newline, or one of the following characters: ‘|’, ‘&’, ‘;’, ‘(’, ‘)’, ‘<’, or ‘>’.
+
+So, we can infer from this that Dave's script will only work in bash default mode, not in POSIX Mode. In POSIX mode, you would need to change out the : for some other character or string of characters.
+
+PART 2, HOW THE & OPERATOR INTERACTS WITH THE | OPERATOR
+The core of this fork bomb is:
+	funcname | funcname &
+
+This is clearly executing funcname twice. But is it executing one in the foreground and one in the background, or is it executing both in the background?
+
+This syntax can be broken down into three subunits in the terminology of bash:
+- a simple command, given twice
+- a pipeline, chaining those two simple commands together such that stdout of the first command becomes stdin of the second command
+- a list terminator, &
+
+Let's quote again here from the Bash Reference Manual, this time Chapter 3.2.4, Lists of Commands. "If a command is terminated by the control operator ‘&’, the shell executes the command asynchronously in a subshell. This is known as executing the command in the background, and these are referred to as asynchronous commands. The shell does not wait for the command to finish, and the return status is 0 (true). When job control is not active (see Job Control), the standard input for asynchronous commands, in the absence of any explicit redirections, is redirected from /dev/null."
+
+So, in the parent shell process where you execute the function containing the fork bomb for the first time, what happens?
+1. In the foreground of the shell where you executed the fork bomb, two subshells are created and pipelined together.
+2. Those subshells are allowed to asynchronously execute, control returns to the parent shell immediately.
+3. The parent shell returns 0 from the function, indicating success.
+
+This is a particularly insidious overloading of the : builtin by a function, because the function also terminates immediately _and_ returns 0 immediately. But then subshells go berserk, and do so differently depending on whether you have executed the bomb interactively or in a non-interactive shell without job control in play.
+
+PART 3, ULIMIT, SYSTEMD, AND OTHER SAFEGUARDS
+How do you protect against this kind of programming error in your software development?
+
+Dave mentions a few means of doing this, as asides. ulimits are the oldest, and are probably underused in modern development, but can really protect you from mistakes. ulimit is a builtin in bash, you can read its documentation with 'help ulimit', but there is also an OS-level implementation of the concept which can be specified in different ways, including global sysctl parameters in Linux governing every executing process. There are various limits which can protect you from either an inadvertent or an intentional fork bomb, including limits on memory usage, stack size, and number of processes that can execute per user. Execution via systemd, or in containers, can offer some of the same protections.
+
+You need to be conscious of this as a developer--programming errors can exhaust resources, not just within the four walls of the process where your software runs, but on the entire system, on disks attached to that system, even on other network-addressible resources attached to that system. The key thing to take away from an episode like this one is not "wow, look at the damage you can do," it's to understand the vector for that damage and how mistakes like that could propagate in code as you try to parallelize without contemplating it.
+
+CONCLUSIONS
+Like a lot of YSAP episodes, this one shows a very tiny script with very deep implications. There's even stuff I left out, like how different shells handle recursion depth considerations, how those considerations are handled across subshells, and whether safeguards built into the shell itself, or into the OS, will kick in first. Consider these two examples:
+	a() { a }; a		# recurse in foreground
+	a() { (a) }; a		# recurse in foreground spawning subshells
+	a() { a | a }; a	# recurse in foreground spawning pipelined subshells
+	a() { a | a & }; a	# dave's example
+
+How are these different? How do they execute differently in a classical Bourne shell (or in a POSIX mode Bash emulating it), in a standard bash shell, or in an alternate sh-compatible shell like zsh or ksh? Is either technically a fork bomb? Why or why not?
+
+Even thinking about how to evaluate this probably requires you to be able to attach debuggers, use tools like dtrace or strace, do fairly advanced work in containers, etc. 
+
+Recursion is dangerous but powerful in programming. To master it you need to understand what it can do to system resources, especially as you leverage additional processes via fork and exec, or additional threads via other models.

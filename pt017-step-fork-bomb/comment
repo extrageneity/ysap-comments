@@ -1,0 +1,77 @@
+Episode 17 - Stepping through and debugging a fork-bomb `:(){ :|: & };:`
+
+This is our third episode reviewing the forkbomb. 
+
+Some subjects we can talk about, related to sucking less at programming:
+1. Printing async from many processes to a single stdout/stderr
+2. Recursion and 'left/right'
+3. Why 'sort | uniq -c' is cringe in the example given here.
+
+First, if you have a wide number of processes, all sharing output, is it reasonable to all have them write to a single file handle as is done here?
+
+Sometimes. Depending on what you're writing. Remember that stdout/stderr, if you do nothing, are a terminal, which is a device, but when you redirect and pipe them, they instead become a FIFO, which is a buffer that fills and drains. If you try to write to it when it's full, your write blocks until the buffer has space available. If you try to read from it when it's empty, your read blocks until the buffer has sufficient data.
+
+The buffer is comparatively small. Implementations vary but a size measured in single kilobytes is typical. Your parallelized program (and that's what a forkbomb is--a parallelized program which consumes more system resources than are available) will rapidly begin to synchronize around access to that buffer. At small levels of parallelization everything will write instantly; at large levels of parallelization, writes will become very slow even though there's no disk involved. Global throughput of your program will become dependent on the single-thread performance of the process doing reads to drain the buffer. In the case of Dave's step-bomb program, where the write to stderr happens in the foreground ahead of the multiplying part of the bomb, the growth will still be exponential but the time per expansion cycle will eventually slow dramatically.
+
+Additionally, the writes we're doing here are all very small, less than the size of the FIFO buffer limit. If your parallel program is writing data in amounts larger than the buffer size, the buffer may fill at a boundary other than on a newline. So while the output here is very clean, real-world use cases for parallelism like this often eventually start to see edge cases where your program output seems to co-mingle text from two different threads on a single line. This happens because sometimes when the write() from the first program finishes, it's now blocked midway through sending a large output, but isn't guaranteed to unblock before a competing writer to the FIFO gets a turn. How to deal with parallel output in cases like that is an advanced topic, but it's one worth studying, because the pattern here maps very directly onto some of the central underlying concepts in Map/Reduce architectures used in large distributed data processing. 
+
+Second, a small note on "left/right" here. This means of thinking about recursion and parallel code paths is worth making part of your standard thinking, because it comes up in other areas of programming. There's a concept called a "binary tree" which also uses left/right, and certain recursive sorting mechanisms are described in the same manner. Dave here doesn't explain why he chose "left/right" instead of 0/1, a/b, red/green, etc. A way to be a better programmer is to talk about things using terminology other programmers will already be familiar with. This episode doesn't discuss an algorithm in its conventional sense, but Dave chose language that will be familiar to people who have been taught some of the fundamental algorithms.
+
+Finally, from the notes.txt in the repo, Dave uses the example:
+	./step-bomb 2>&1 | sort | awk '{print $1}' | uniq -c
+
+sort does exactly what you would assume, it sorts the output in some arbitrary order, such that like lines will appear next to one another without being deduplicated. 
+
+The next command, awk '{print $1}', prints the first whitespace-separated field of each line (in our example, the generation number of each output line) to stdout.
+
+The last command, uniq -c, deduplicates identical lines, and prefixes the line with a count of the number of deduplicated instances. uniq only deduplicates adjacent identical lines, so the input:
+	2
+	1
+	2
+would result in:
+	1 2
+	1 1
+	1 2
+... rather than the perhaps-expected 1 1:
+	2 2
+	1 1
+
+Taken as a whole, this invocation (slice out a field you want, then feed it to sort and uniq in order to get a count of the number of times that field appeared in your data) is a pattern that occurs over and over again in scripting, especially as you analyze program/system logs that are not yet flowing into an aggregation and analysis system like Splunk or an ELK stack. 
+
+So, why is it cringe? It doesn't scale well. When you run sort, it has to allocate enough memory to represent all the lines it will output, plus some memory to sort that eventual output. In Dave's example where there are only hundreds of lines of output, this isn't burdensome, but consider if you're analyzing tens of millions of occurrences of something, looking for patterns. The memory required to do this becomes very large. The time required to do the sorting becomes very slow. The sorted data-set is also of very low value because all you do with it is deduplicate it, and then often re-sort the output of uniq -c after, in order to get occurrences from most-frequent to least frequent. What's a less cringe way of doing this? 
+
+You could do it natively in bash, but we can also do this:
+	awk '{ ++i[$1] } END { for(f in i) print i[f], f }'
+
+You'll find that on large input sets, this is much faster than sort and uniq are together at counting instances of duplicated data, and uses much less memory. I'll also give a related incantation, for when you want to sum data like:
+	100	monday
+	50	tuesday
+	120	wednesday
+
+You can use:
+	awk '{ i[$2] += $1  } END { for(f in i) print i[f], f }'
+
+A common real-world example of this is summing things like file sizes. This is from the MacOS host where I wrote this comment:
+	$ find /Applications -type f -name '*.*' -ls | awk '{ x=split($NF,a,"/"); y=split(a[x],b,"[.]"); ext=b[y]; sums[ext] += ($7 / 1024/1024) } END { for(ext in sums) printf("%4.2fMB %s\n",sums[ext],ext) }' | sort -k1nr | head
+	523.84MB dylib
+	325.21MB pak
+	211.58MB dmg
+	80.59MB dat
+	72.64MB asar
+	49.88MB car
+	38.65MB node
+	30.44MB js
+	26.21MB strings
+	15.70MB map
+
+(One note here: awk on non-Linux systems is typically a POSIX awk that has some surprising limitations. If you're writing on one of those and you have a GNU awk available as gawk, you may want to habituate yourself to calling that instead.)
+
+It's worth taking the time early to become conversant in good, fast ways to count and sum fields in bash pipelines. It's hard to beat sort and uniq for compact, but they don't scale to some of what you would be dealing with in a production environment, so at least until you get really comfortable banging out one-liners like the one I show above, try not to rely on them excessively.
+
+Conclusions...
+
+As we've been talking about for several episodes, a forkbomb is best seen as a model of a parallelized program in need of tuning and optimization. This episode shows some ways to get your head around tracing a program like that and its performance demands, which rapidly devolves into an exercise in collating, parsing, and analyzing program output. To suck less at programming, you need to have a good mental toolbox of patterns to do this. You also need to be thinking about the kind of probe effect your patterns introduce, both to the program you're analyzing and to the system you're analyzing it on. Some means of collecting data from a running environment are much more disruptive than others, and the more reflexively you think about those impacts the better off you'll be.
+
+Being able to slice and dice streams of stdout from programs you generate is a skill with almost limitless utility. You'll find that as you get better at doing it, you also become a better shell programmer in the process.
+
+Happy tracing!

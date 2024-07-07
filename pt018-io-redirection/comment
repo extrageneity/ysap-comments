@@ -1,0 +1,131 @@
+Episode 18 - IO Redirection in Bash EXPLAINED
+
+This episode deals with I/O redirection. Getting the most out of the episode requires you to understand the standard I/O model, file descriptors, and what the output redirection operators really do.
+
+1. The standard I/O model.
+The Unix standard I/O model has three input/output channels which are set up by default on most processes you launch. 
+
+These are:
+- standard input, on file descriptor zero, also called stdin. Your process normally accepts input from whatever executed it by reading from stdin.
+- standard output, on file descriptor one, also called stdout. Your process normally gives output to whatever executed it by writing to stdout.
+- standard error, on file descriptor two, also called stderr. Your process normally communicates with whoever is executing your program by writing to stderr.
+
+Collectively, these are often called stdio. 
+
+When you invoke a command interactively from the bash shell, the shell does fork() and exec() and runs your command. fork() duplicates the current process, including all its file descriptors, and then exec() throws out the program in the duplicated process, replacing it with a new program, but still keeping all those file descriptors.
+
+In your interactive bash shell, all three standard I/O handles are pointed at your terminal. Input is being read from the terminal, output is being written to the terminal, and errors are also being written to the terminal, which is a character-mode device with a unique path somewhere under /dev.
+
+If you, by any means, cause these three file descriptors (0, 1, and 2) to point at different targets, or closed completely, in your shell, then they will also be re-pointed or closed in whatever command your shell then executes.
+
+2. File descriptors.
+What is a file descriptor, really? A file descriptor is an agreement between your program and the Unix/Linux kernel about how the program will do input and output. It can point at a traditional file on disk, it can point at some device like your terminal or /dev/null, it can point at a FIFO/pipe, it can even point at a network socket.
+
+In all cases, the kernel keeps track of what the file descriptor is pointing at. Which blocks on disk, which TCP source and destination port, how big the FIFO buffer is, how full it is, whatever. Your program makes some system call--open() for a traditional file, connect() for a network socket, and so on, and provides details like: am I opening for read, write, or both; am I truncating the file or appending to it; what permissions should the file have on creation; and equivalent baseline settings like socket timeouts for other file descriptor types. The kernel figures out how to give you that, and then keeps track of the fact that it has been given to you, and returns the number of the relevant file descriptor. After that, you communicate with the file handle, using system calls like read(), write(), send(), recv(), etc. When you execute these system calls, at a high level they all accept the number of the file descriptor, and an address in memory where bytes associated with the I/O operation can be read or written. (There are additional details here, like seek pointers--the kernel "knows" where in a file you currently are, and you can seek forward/backward in some cases. But I'll leave those out here as they aren't especially relevant to bash programming.)
+
+When you're done, there are system calls like close() which tell the kernel that you won't send any more writes/reads to your file descriptor. The kernel disassociates that file handle from your process, and finalizes things: for network connections, this might send a TCP FIN packet; for regular files, in-memory buffers might be flushed to disk; for network-accessible files, locks might be released; and so on. Your program generally doesn't have to know how to do these things at a low level; in fact, in the stdio model your program often doesn't even know which of these things is happening at run-time. The kernel takes care of all of it for you.
+
+Managing file descriptors for you is almost the entire reason for shells like bash to exist. Almost everything else the shell does would be worthless without stdio.
+
+3. So, what operators does Dave use in this program, which interact with stdio?
+Surprisingly, only two! He used >, which is used to open/redirect a file descriptor for writing (with a conventional file being truncated on write) and he used |, the pipeline operator, which does both fork/exec stuff _and_ I/O redirection stuff.
+
+We'll take > first. We see several instances of it:
+2>&1
+1>/dev/null
+>&1
+>&2
+3>&2
+>&3
+
+All of these are the same operator, >, saying: the file descriptor upon which I'm operating should begin writing to the destination I have specified. 
+
+> by itself is selecting stdout, file descriptor 1. So > and 1> are the same thing.
+
+2> selects stderr, file descriptor 2. 3> selects file descriptor 3, a new file descriptor not contemplated in the stdio model.
+
+So, with the > operator, you always have to ask two questions: First, which file descriptor am I selecting? Second, which target am I redirecting that file descriptor to?
+
+What targets does Dave give, from the cases above? &1, /dev/null, &2, and &3. 
+
+/dev/null is the simplest, a standard file path, in this case to the null device, a special standard Unix/Linux device. If you try to read from it, the read always returns zero bytes. If you try to write to it, the write is always accepted and discarded. (There is a related /dev/zero, which instead returns an endless string of zeroes.) 
+
+All the ones starting with an ampersand (&) character are just targeting a file descriptor.
+
+So, our six redirections, respectively, mean:
+- 2>&1: Writes to stderr should begin to be sent to wherever stdout is currently pointing.
+- 1>/dev/null: Writes to stdout should begin to be sent to /dev/null.
+- >&1: Writes to stdout should begin to be sent to wherever stdout is currently pointing.
+- >&2: Writes to stdout should begin to be sent to wherever stderr is currently pointing.
+- 3>&2: Writes to file descriptor 3 should begin to be sent to wherever stderr is currently pointing.
+- >&3: Writes to stdout should begin to be send to wherever file descriptor 3 is currently pointing.
+
+Most of these involve an additional system call that the kernel provides, often called dup() or dup2(), which simply duplicates a file descriptor. 
+
+So, one operator, >, with two operands: a selected file handle, and a redirection target, which can either be another file handle or a conventional file path.
+
+But Dave also used another operator, |, the pipeline operator. What does this actually do, if I give:
+	command1 | command2
+
+So, first, the shell does fork() to get a child process, and then does exec() to run command1 in that child process. stdin and stderr are both the same as in your shell. I'll come back to stdout.
+
+Next, the shell does fork() a second time to get a second child process, and then does exec() to run command2 in that child process. stdout and stderr are both the same as in your shell, and I'll come back to stdin.
+
+Finally, the shell pipes the two commands together. A FIFO, or "pipe", is created. I've discussed in previous notes that this is a small memory buffer that you can write to until it's full, or read from unless it's empty, and if you either write when full or read when empty, the operation blocks. This is a special file type used for inter-process communication. The pipe, or FIFO, is opened for writing by the process that executes command1, and writes its stdout to the FIFO. The same pipe is opened for reading by the process that executes command2, and reads its stdin _from_ the FIFO.
+
+So, the pipe command isn't just spawning two commands--it's also setting up a FIFO, and it's redirecting one file handle for each command to point at that FIFO.
+
+4. Using all this to explain what happens in Dave's live demo.
+First, he runs:
+./program | grep this
+
+Remember, program is a script he's set up which:
+- does a simple echo
+- does an echo using >&1
+- does an echo using >&2
+- duplicates FD 2 into FD 3, and then does an echo using >&3
+
+His pipeline sets up two processes: ./program; and grep. The file handles end up looking like:
+
+| PROCESS   | HANDLE   | TARGET          | OPERATOR |
+| ./program | stdin/0  | Dave's terminal | default  |
+| ./program | stdout/1 | The FIFO        | pipe (|) |
+| ./program | stderr/2 | Dave's terminal | default  |
+| ./program |        3 | Dave's terminal | default  |
+| grep      | stdin/0  | The FIFO        | pipe (|) |
+| grep      | stdout/1 | Dave's terminal | default  |
+| grep      | stderr/2 | Dave's terminal | default  |
+
+Inside the program, Dave successively runs echo and toys with this, but the only two places the program will ever write, no matter how many file handles he uses, or what order of redirections he puts into it, will be Dave's terminal and the FIFO set up by that pipe (|) operator.
+
+We know what grep does: it looks at its arguments, and selectively copies stdin (in our case, the FIFO) to stdout, depending on whether or not the lines match what the arguments said they should match. Everything gets written to Dave's terminal in the end, but grep will only act on things which it sees on the FIFO, which is only ever things written to file descriptor 1 in Dave's program.
+
+Dave's next commands are: 
+	./program | grep foo
+
+	This of course works the same way the last things did.
+
+	./program 2>&1 | grep foo
+	This sends stderr of program to file descriptor 1, which is pointed at the FIFO set up by the pipeline. grep gets it all.
+
+	./program 1>/dev/null 2>&1
+	This sends stdout of program to /dev/null, and then sends stderr to the same target as stdout. Dave's terminal no longer gets anything.
+
+	./program 2>&1 1>/dev/null
+	This sends stderr of program to Dave's terminal--where it was already pointing, but in a way that would be eligible for subquently redirection to FIFO using a pipe, then sends stdout of program to /dev/null. Dave's terminal only sees the stuff the program wrote to its &2 and &3 handles.
+
+All quite straightforward. There are additional operators we could discuss. >> does the same as >, but opens in append mode instead of truncating the file. < opens for reading instead of for writing; here 0< and < both select stdin. <> causes the selected handle to be redirected for both reading and writing, which typically you would only ever do to a device, and I've found very few real-world uses for. There are here-documents and here-strings, respectively done using << and <<<, which I won't discuss here.
+
+To close a file handle, which is different than redirecting it to /dev/null, you can redirect it to &-.
+
+You can read about all this in the REDIRECITON section of the bash man page.
+
+5. Conclusions.
+
+How does this simple bash example help you to suck less at programming?
+- I/O redirection is central to how you set up inter-process communication in bash, which is in turn core not just to how you use CLI tools but also to how you launch complex workflows like DevOps CI/CD pipelines.
+- Understanding how bash deals with stdio and file descriptors can grant you insight into how everything else in Linux/Unix deals with them; regardless of which language you're writing in, and which abstractions are overlaid on top of it all, the kernel always reduces it to this same basic concept: which file handles your process has, which modes of access they permit, and which resources they target, keeping in mind that "file" can also mean "network resource" or "device" or "FIFO/pipe." 
+- If you can't at least read the basic operations like >&2 and it looks magical to you, you will have a very difficult time dissecting program flow, discarding input you don't want, etc.
+- forking is a common mechanism for implementing parallel processing in programs, especially ones that don't use the more complex threading mechanisms provided by advanced languages. Understanding how file handles will be shared between parent and forked child, and understanding which file handles will in turn be available after you exec() away the parent's program in the child process, will both help you to set up communication between parent and child, and to avoid common pitfalls. Getting, on a really intuitive level, what bash is doing in examples like this, turns into understanding much more intuitively how your own programs work, whether you're scripting in shell, writing in something like Python, or writing in a compiled-to-binary language like C or Rust.
+
+Happy reading and writing!

@@ -1,0 +1,111 @@
+Episode 19 - Quoting Commands over SSH
+
+In this episode, Dave demonstrates how local and remote shells can fight across SSH over which should expand a variable.
+
+I'm going to discuss what makes this harder than it looks to handle, and offer a better approach.
+
+First we'll look at three commands Dave ran. On each:
+- the local shell gave the command to ssh with execve()
+- ssh sent the command across the wire to sshd
+- sshd invoked the remote shell with execve()
+- the remote shell ran the command
+
+After authenticating the user and performing 8 other steps, 'man sshd' says that in step 9, sshd: "Runs user's shell or command. All commands are run under the user's login shell as specified in the system password database."
+
+Discussing usage, 'man ssh' says:
+	If a command is specified, it will be executed on the remote host instead of a login shell. A complete command line may be specified as
+	command, or it may have additional arguments. If supplied, the arguments will be appended to the command, separated by spaces, before it is
+	sent to the server to be executed.
+
+sshd source code sheds further light. As of this writing, in: https://github.com/openssh/openssh-portable/blob/master/session.c#L1698,  do_child() calls execve() to spawn a shell, sets argv[1] to '-c', and stores the entire command it got from ssh in argv[2]. It never sets further arguments.
+
+So, no matter how many positional parameters you give ssh, ssh packs it all into one string, and sshd gives the remote shell that string as the sole argument to the -c switch. bash, invoked with -c, interprets the next argument as a bash expression to execute. 
+
+In case one: ssh void "echo $PWD"`
+- local bash expands $PWD and strips out the double quotes.
+- local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='echo /Users/dave/dev/you-suck-at-programming/pt019'
+- ssh sends argv[2] to sshd as the remote command.
+
+In case two: ssh void echo "$PWD"`
+- local bash expands $PWD and strips out the double quotes.
+- local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='echo', argv[3]='/Users/dave/dev/you-suck-at-programming/pt019'
+- ssh sends sshd a remote command constructed by concatenating together argv[2] and argv[3] using the space (' ') character as a separator.
+
+sshd sees an identical command in each case. Next:
+- sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]='echo /Users/dave/dev/you-suck-at-programming/pt019'
+- remote shell executes the echo builtin with a single argument, the expanded value of $PWD given to ssh by local bash.
+
+In our last case: ssh void 'echo "$PWD"'`
+- local bash strips out the single quotes.
+- local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='echo "$PWD"'
+- ssh sends argv[2] to sshd as the remote command.
+- sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]='echo "$PWD"'
+- remote shell strips out the double quotes, expands $PWD to /home/dave, and passes that as the single argument to the echo builtin.
+
+We can see, by quoting $PWD in two different ways, it was expanded by the remote shell instead of the local one, and was passed to echo without undergoing word splitting.
+
+What if we need to quote it three ways? Consider the case where we want to see the root shell's value for $PWD, using sudo -i, which runs 'bash -c' in much the same way sshd does.
+
+If we try: ssh void 'sudo -i echo "$PWD"'`
+- local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='sudo', argv[3]='-i', argv[4]='echo "$PWD"'
+- sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]='sudo -i echo "$PWD"'
+- remote shell sets argv[] for sudo to: argv[0]='sudo', argv[1]='-i', argv[2]='echo', argv[3]='/home/dave' -- which is cringe
+- sudo sets argv[] for the root shell to:: argv[0]='bash', argv[1]='-c', argv[2]='echo /home/dave'
+
+One way to fix it: ssh void 'sudo -i '\''echo "$PWD"'\''`
+- local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]=bashstring, where bashstring contains literal single-quote (') characters, thus: sudo -i 'echo "$PWD"'
+- ssh sends argv[2], bashstring, to sshd as the remote command.
+- sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]=bashstring
+- remote shell sets argv[] for sudo to: argv[0]='sudo', argv[1]='-i', argv[2]='echo "$PWD"'
+- sudo sets argv[] for the root shell to: argv[0]='bash', argv[1]='-c', argv[2]='echo "$PWD"' 
+
+Is this based? Even writing and testing it took me longer than I wanted. Even to talk about how I'm escaping some single-quotes so that the remote shell can process them, I had to change notations.
+
+There are other ways to do this, for instance using all double-quotes and giving \" and \\\" if you want the remote login shell or the remote root shell to handle the mark in question. But what if, after using sudo to switch users, I ssh to a third system, for instance connecting to a jenkins worker from its controller. How many layers of quoting do I need to add? Soon you start seeing commands with double-quotes escaped like: \\\\\". I think, anyway. It might be four, or six. Down this road lies madness.
+
+Dave suggests refactoring to avoid expanding variables or using quotes at all. But these aren't our only worry! Consider these two ways to pull a certain log message out of a big remote logfile.
+
+Cringe: ssh void gzip -dc /var/log/messages.1.gz | grep "some-pattern"`
+We stream the entire uncompressed log across the wire, and grep through that output on the local system.
+
+Based: ssh void 'gzip -dc /var/log/messages.1.gz | grep "some-pattern"'`
+We grep through the uncompressed log on the remote system, and only stream matching lines across the wire.
+
+Go cringe interactively, you might see observable extra delay before your results return. Go cringe in recurring automation, you might incur additional network transit costs as unnecessary bytes traverse between public cloud regions.
+
+I have a better way to discuss.
+
+ssh and sshd have a clean channel for sending commands to the very last process in any chain of execve() calls, without some intervening shell altering the input: stdin.
+
+I call this the 'helper script' pattern. make a helper.sh script which contains:
+	echo "$PWD"`
+and change your ssh commands to one of the following:
+	ssh void bash -s < helper.sh`
+	ssh void sudo -i bash -s < helper.sh`
+	ssh void sudo -u jenkins -i ssh jenkins-worker bash -s < helper.sh`
+
+or even:
+	curl "https://(some-server)/helper.sh" | ssh void sudo -u jenkins -i ssh jenkins-worker bash -s`
+
+bash -s runs a script read from standard input. You can even supply additional arguments after, if they don't need quoting.
+
+You can do the same thing with a python program:
+	ssh void sudo -u jenkins -i ssh jenkins-worker python3 - < helper.py
+
+This can still get ugly, but done thoughtfully, it's unambiguous which arguments are handled by each intermediary command. At the end of your chain, only the last interpreter acts on stdin where you put the lines you care about.
+
+Whether you pull your script from a file or fetch it with curl, once you send it across stdin, the method is atomic. Everything runs on one pipeline, with no temp files to clean up. I've used it in enterprise environments to implement complex code release strategies, do ad-hoc one-time commands like installation of the AWS Systems Manager component on a fleet of EC2 instances initially provisioned without them, do auditing, etc.
+
+Putting stdin on ssh connections to non-interactive work for you can be incredibly potent. You can even do other complex command streaming the same way. Consider:
+	ssh void 'cd /etc && sudo tar zcfp - nginx.conf.d' | (cd ~/nginx-backups/ && tar zxfp -)
+... where a compressed tarball is being streamed across that stdin channel, and you can't just use rsync -e ssh because you need to privilege escalate on the remote side after connecting. You can even do block-level disk mirroring over ssh by using dd with the right arguments on both ends of the connection. 
+
+Conclusions.
+
+What makes all this hard is that characters which have special meaning to a bash shell are being seen and parsed by more than one instance of bash. You have to think carefully about escaping so that special characters are handled by the right shell and not the wrong one.
+
+There are good reasons why you might have to do this kind of thing, especially when you work acorss process, language, privilege, or network boundaries. The problem isn't unique to shells, or to SSH. You encounter many of the same problems with ultra-modern tech, doing things like 'kubectl exec' or 'docker run', especially as you begin to introduce CI/CD pipelines, git hooks, and other DevOps practices. But regardless of the exact problem space, once you get any kind of nested string quoting or escaping involved, things escalates to intolerable complexity faster than most other patterrns in shell programming can. 
+
+None of it's magic, but none of us are infallible. Understanding what the execve() system call does, and how to write down exactly what each process in the chain will look like and what arguments it will see, will help you determine whether all this quoting and escaping is too brittle to maintain. This understanding helps you decide when it's time to refactor. When you do, please consider the "helper script" pattern.
+
+Happy keeping it simple, stupid!

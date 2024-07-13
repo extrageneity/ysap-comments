@@ -21,12 +21,12 @@ sshd source code sheds further light. As of this writing, in: https://github.com
 
 So, no matter how many positional parameters you give ssh, ssh packs it all into one string, and sshd gives the remote shell that string as the sole argument to the -c switch. bash, invoked with -c, interprets the next argument as a bash expression to execute. 
 
-In case one: ssh void "echo $PWD"`
+In case one: ssh void "echo $PWD"
 - local bash expands $PWD and strips out the double quotes.
 - local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='echo /Users/dave/dev/you-suck-at-programming/pt019'
 - ssh sends argv[2] to sshd as the remote command.
 
-In case two: ssh void echo "$PWD"`
+In case two: ssh void echo "$PWD"
 - local bash expands $PWD and strips out the double quotes.
 - local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='echo', argv[3]='/Users/dave/dev/you-suck-at-programming/pt019'
 - ssh sends sshd a remote command constructed by concatenating together argv[2] and argv[3] using the space (' ') character as a separator.
@@ -35,7 +35,7 @@ sshd sees an identical command in each case. Next:
 - sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]='echo /Users/dave/dev/you-suck-at-programming/pt019'
 - remote shell executes the echo builtin with a single argument, the expanded value of $PWD given to ssh by local bash.
 
-In our last case: ssh void 'echo "$PWD"'`
+In our last case: ssh void 'echo "$PWD"'
 - local bash strips out the single quotes.
 - local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='echo "$PWD"'
 - ssh sends argv[2] to sshd as the remote command.
@@ -46,13 +46,13 @@ We can see, by quoting $PWD in two different ways, it was expanded by the remote
 
 What if we need to quote it three ways? Consider the case where we want to see the root shell's value for $PWD, using sudo -i, which runs 'bash -c' in much the same way sshd does.
 
-If we try: ssh void 'sudo -i echo "$PWD"'`
+If we try: ssh void 'sudo -i echo "$PWD"'
 - local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]='sudo', argv[3]='-i', argv[4]='echo "$PWD"'
 - sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]='sudo -i echo "$PWD"'
 - remote shell sets argv[] for sudo to: argv[0]='sudo', argv[1]='-i', argv[2]='echo', argv[3]='/home/dave' -- which is cringe
 - sudo sets argv[] for the root shell to:: argv[0]='bash', argv[1]='-c', argv[2]='echo /home/dave'
 
-One way to fix it: ssh void 'sudo -i '\''echo "$PWD"'\''`
+One way to fix it: ssh void 'sudo -i '\''echo "$PWD"'\''
 - local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]=bashstring, where bashstring contains literal single-quote (') characters, thus: sudo -i 'echo "$PWD"'
 - ssh sends argv[2], bashstring, to sshd as the remote command.
 - sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]=bashstring
@@ -65,10 +65,10 @@ There are other ways to do this, for instance using all double-quotes and giving
 
 Dave suggests refactoring to avoid expanding variables or using quotes at all. But these aren't our only worry! Consider these two ways to pull a certain log message out of a big remote logfile.
 
-Cringe: ssh void gzip -dc /var/log/messages.1.gz | grep "some-pattern"`
+Cringe: ssh void gzip -dc /var/log/messages.1.gz | grep "some-pattern"
 We stream the entire uncompressed log across the wire, and grep through that output on the local system.
 
-Based: ssh void 'gzip -dc /var/log/messages.1.gz | grep "some-pattern"'`
+Based: ssh void 'gzip -dc /var/log/messages.1.gz | grep "some-pattern"'
 We grep through the uncompressed log on the remote system, and only stream matching lines across the wire.
 
 Go cringe interactively, you might see observable extra delay before your results return. Go cringe in recurring automation, you might incur additional network transit costs as unnecessary bytes traverse between public cloud regions.
@@ -78,14 +78,14 @@ I have a better way to discuss.
 ssh and sshd have a clean channel for sending commands to the very last process in any chain of execve() calls, without some intervening shell altering the input: stdin.
 
 I call this the 'helper script' pattern. make a helper.sh script which contains:
-	echo "$PWD"`
+	echo "$PWD"
 and change your ssh commands to one of the following:
-	ssh void bash -s < helper.sh`
-	ssh void sudo -i bash -s < helper.sh`
-	ssh void sudo -u jenkins -i ssh jenkins-worker bash -s < helper.sh`
+	ssh void bash -s < helper.sh
+	ssh void sudo -i bash -s < helper.sh
+	ssh void sudo -u jenkins -i ssh jenkins-worker bash -s < helper.sh
 
 or even:
-	curl "https://(some-server)/helper.sh" | ssh void sudo -u jenkins -i ssh jenkins-worker bash -s`
+	curl "https://(some-server)/helper.sh" | ssh void sudo -u jenkins -i ssh jenkins-worker bash -s
 
 bash -s runs a script read from standard input. You can even supply additional arguments after, if they don't need quoting.
 

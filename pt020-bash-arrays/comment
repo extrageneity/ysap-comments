@@ -1,0 +1,61 @@
+Episode 20 - Arrays in Pure Bash
+
+This episode introduces one of the bash compound data structures, arrays.
+
+Crib sheet for what Dave shows:
+1. Array assignment, varname=(list), where list is simply any text, subjected to bash word-splitting, each word getting assigned a position.
+2. Expanding a full array, so that it isn't subject to new word splitting: "${varname[@]}"
+3. Expanding a full array, so that it is subject to any word splitting at all: "${varname[*]}"
+4. String quoting with literal newlines in between the double-quotes. This isn't really discussed in the episode, but if you hadn't seen it before, it's worth noting. Same thing works with single-quotes, and most other bash structures.
+
+I'll go over some things Dave didn't cover in the episode.
+- The difference between "${varname[*]}" and ${varname[*]}, and how "${varname[*]}" interacts with $IFS
+- Checking the size of an array.
+- ${!varname[@]} and ${!varname[*]}.
+- Indexing individual array elements, and assigning individual array elements.
+- The other ways to declare an array.
+- Adding elements to an array.
+- Weird corner cases that can arise from assigning and unassigning individual elements directly.
+
+My git repo (https://github.com/extrageneity/ysapc-comments/) will include an additional script you can look at, at pt020-bash-arrays/more-bash-arrays.sh, looking at much of this in more detail.
+
+Dave shows two of the four possible ways you can expand an array:
+- "${varname[@]}", which expands the array such that each index is a distinct positional parameter without being subjected to further bash word splitting.
+- "${varname[*]}", which joins every element of the array with the first character of $IFS as a field separator, such that the joined string is a single positional parameter, not subject to further word splitting.
+- ${varname[@]} and ${varname[*]}, which are functionally identical: the array is expanded, and is then subject to further word splitting by bash. In the extremely rare case of IFS being the null string such that no further word splitting happens, _both_ behave the same way as "${varname[@]}", which I found surprising.
+
+What else can we do, subscripting with @ and *? First, we can check the size of the array, with either ${#varname[@]} or ${#varname[*]}. Formally, this is the number of elements in the array, which isn't always the same as the last index minus 1. In bash it's possible to have an array where certain subscripts aren't assigned at all. . In that example, you'll also see the other thing you can do by subscripting with @ or *, which is do either ${!varname[@]} or ${!varname[*]}. This expands to all keys/subscripts which exist in the array, rather than expanding to all values.
+
+As you'll see in the more-bash-scripts.sh array2 example, we can also initialize array fields directly by subscript using varname[subscript]=value. If we initialize only subscripts 0 and 3 in an array, we end up in the unusual scenario where the numeric value of ${#varname[@]} is smaller than the numeric value of the last index in the array. Similarly, if you do unset varname[subscript], the key is simply deleted from the array. Other array members are not left-shifted automatically.
+
+You can declare an empty array in two ways. You can say declare -a varname, or you can say varname=(). Both initialize an array with no elements. Bash will also implicitly declare arrays for you running certain builtins. mapfile, also known as readarray, is intended to work with arrays directly, and loads lines into an array similarly to how a 'while read' loop does. The read builtin will also load variables into an array with the -a switch. 
+
+You can add additional values to an array using varname+=(list). 
+
+When you're working with array subscripts, during either assignment or variable expansion, the subscript is a math expression, just as in (( )) bash arithmetic syntax. If your math expression evaluates to a negative number, that number is subtracted from the rightmost index in the array in order to decide what array member to subscript into.
+
+Everything we've discussed above applies to a form of arrays bash calls "indexed arrays." There's a separate data-type, "associative arrays," which are more similar to hashes or K/V pairs from other languages. I won't discuss those here, in part because I expect Dave will do an episode using them eventually, and in part because YouTube has a comment length limit and if I hit it I'm going to spend hours re-writing to get under it... again.
+
+Conclusions.
+
+How is this a "you suck at programming" topic?  Dave's point here was, again, bash word splitting can get you in trouble if you're working with data where your values contain characters bash is splitting against--and that this can be a reason to use arrays instead of just using large single variables with something like newlines in it, and then letting bash word splitting slice up the variable for you. And that's definitely important. Getting the most out of bash means understanding how word-splitting works, how to take advantage of it when you want to, and how to get around it when you don't want it. Arrays are one of the most powerful options you have when getting around word splitting is what you need.
+
+But there are other reasons you will suck less at bash programming if you master this concept. Set aside for the moment the most basic one, which is that it's hard to do much of anything valuable in a programming language without at least some access to compound data-structures. Bash has capabilities you can't access without arrays. I already mentioned a couple of those above. That mapfile builtin, which is too complex to discuss here, is disgustingly potent in certain use cases.
+
+One other important place where you end up working with arrays in bash? $PIPESTATUS is a special variable that bash sets any time you run a piped expression. Given the example command:
+	command1 | command2 | command3
+... after that command completes, $PIPESTATUS will be an array where:
+	${PIPESTATUS[1]} contains the return code of command1
+	${PIPESTATUS[2]} contains the return code of command2
+	${PIPESTATUS[3]} contains the return code of command3
+... and $? will contain the return code of the entire pipeline, normally the same as ${PIPESTATUS[3]}. 
+
+PIPESTATUS is ephemeral in the same way $? is, meaning it will change the next time you run anything bash treats as a pipeline. You want enough array knowledge to be able to copy it off to a separate variable when you want to look at status codes for a specific pipeline. You can do something like:
+	my_important_pipestatus=( "${PIPESTATUS[@]}" )
+... to do that. There are other interesting ones too, if you want to look at them all you can run:
+	set | grep '=('
+Then, reference them in the bash man page.
+
+So, that's it. For now, anyway. Arrays in bash. Indexed arrays, as they're known more formally. Another tool in your toolbox, now hopefully de-mystified. When you're ready for additional reading, see the 'Arrays' section of the PARAMETERS chapter in the bash man page, and then the 'Parameter Expansion' section of the "EXPANSION" chapter. There are a number of array-specific parameter expansions I haven't covered here, for example array slicing with ${varname[@]:offset:length}. I won't cover those exhaustively; hopefully after reading this, you have a sense of where to start in the man page itself.
+
+Happy indexing!

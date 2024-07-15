@@ -45,10 +45,10 @@ But there are other reasons you will suck less at bash programming if you master
 One other important place where you end up working with arrays in bash? $PIPESTATUS is a special variable that bash sets any time you run a piped expression. Given the example command:
 	command1 | command2 | command3
 ... after that command completes, $PIPESTATUS will be an array where:
-	${PIPESTATUS[1]} contains the return code of command1
-	${PIPESTATUS[2]} contains the return code of command2
-	${PIPESTATUS[3]} contains the return code of command3
-... and $? will contain the return code of the entire pipeline, normally the same as ${PIPESTATUS[3]}. 
+	${PIPESTATUS[0]} contains the return code of command1
+	${PIPESTATUS[1]} contains the return code of command2
+	${PIPESTATUS[2]} contains the return code of command3
+... and $? will contain the return code of the entire pipeline, normally the same as ${PIPESTATUS[2]}. 
 
 PIPESTATUS is ephemeral in the same way $? is, meaning it will change the next time you run anything bash treats as a pipeline. You want enough array knowledge to be able to copy it off to a separate variable when you want to look at status codes for a specific pipeline. You can do something like:
 	my_important_pipestatus=( "${PIPESTATUS[@]}" )

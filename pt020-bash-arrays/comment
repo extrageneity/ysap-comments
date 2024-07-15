@@ -17,7 +17,7 @@ I'll go over some things Dave didn't cover in the episode.
 - Adding elements to an array.
 - Weird corner cases that can arise from assigning and unassigning individual elements directly.
 
-My git repo (https://github.com/extrageneity/ysapc-comments/) will include an additional script you can look at, at pt020-bash-arrays/more-bash-arrays.sh, looking at much of this in more detail.
+My git repo ( https://github.com/extrageneity/ysap-comments/ ) will include an additional script you can look at, at https://github.com/extrageneity/ysap-comments/blob/main/pt020-bash-arrays/more-bash-arrays.sh , looking at much of this in more detail.
 
 Dave shows two of the four possible ways you can expand an array:
 - "${varname[@]}", which expands the array such that each index is a distinct positional parameter without being subjected to further bash word splitting.
@@ -26,7 +26,7 @@ Dave shows two of the four possible ways you can expand an array:
 
 What else can we do, subscripting with @ and *? First, we can check the size of the array, with either ${#varname[@]} or ${#varname[*]}. Formally, this is the number of elements in the array, which isn't always the same as the last index minus 1. In bash it's possible to have an array where certain subscripts aren't assigned at all. . In that example, you'll also see the other thing you can do by subscripting with @ or *, which is do either ${!varname[@]} or ${!varname[*]}. This expands to all keys/subscripts which exist in the array, rather than expanding to all values.
 
-As you'll see in the more-bash-scripts.sh array2 example, we can also initialize array fields directly by subscript using varname[subscript]=value. If we initialize only subscripts 0 and 3 in an array, we end up in the unusual scenario where the numeric value of ${#varname[@]} is smaller than the numeric value of the last index in the array. Similarly, if you do unset varname[subscript], the key is simply deleted from the array. Other array members are not left-shifted automatically.
+As you'll see in the more-bash-arrays array2 example, we can also initialize array fields directly by subscript using varname[subscript]=value. If we initialize only subscripts 0 and 3 in an array, we end up in the unusual scenario where the numeric value of ${#varname[@]} is smaller than the numeric value of the last index in the array. Similarly, if you do unset varname[subscript], the key is simply deleted from the array. Other array members are not left-shifted automatically.
 
 You can declare an empty array in two ways. You can say declare -a varname, or you can say varname=(). Both initialize an array with no elements. Bash will also implicitly declare arrays for you running certain builtins. mapfile, also known as readarray, is intended to work with arrays directly, and loads lines into an array similarly to how a 'while read' loop does. The read builtin will also load variables into an array with the -a switch. 
 

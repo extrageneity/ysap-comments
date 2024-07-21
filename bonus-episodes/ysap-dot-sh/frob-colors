@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+# emit an sgr sequence. argument is the sequence to emit.
+# sequences are defined in ECMA-48 clause 8.3.117, and additionally by ITU-T Rec. T.416, T.412, and T.414.
+
+function sgr_sequence()
+{
+	# from ECMA-48 clause 8.3.16, CSI
+	CSI="\e["
+
+	# from ECMA-48 clause 8.3.117, SGR
+	SGR_TERMINATOR="m"
+
+	printf "%b%s%s" "${CSI}" "${1:-0}" "${SGR_TERMINATOR}"
+}
+
+function sgr_fgcolor()
+{
+	# code 38 is foreground color from T.416 clause 13.1.8
+	# subcode 5 is indexed colors, from the same clause
+	# which color is which index is terminal-specific, we will use this script to explore permissible values
+	sgr_sequence "38;5;${1:-0}"
+}
+
+function sgr_bgcolor()
+{
+	# code 48 is background color from T.416 clause 13.1.8
+	# subcode 5 is indexed colors, from the same clause
+	# which color is which index is terminal-specific, we will use this script to explore permissible values
+	sgr_sequence "48;5;${1:-0}"
+}
+
+function sgr_reset()
+{
+	sgr_sequence "0"
+}
+
+function sgr_bold()
+{
+	sgr_sequence "1"
+}
+
+function sgr_dim()
+{
+	sgr_sequence "2"
+}
+
+function sgr_italics()
+{
+	sgr_sequence "3"
+}
+
+for((x=0; x<= 255; x++))
+{
+	printf "%3d: %splain%s" "${x}" "$(sgr_fgcolor "${x}")" "$(sgr_reset)"
+	
+	if (( (x % 8) == 7 )) 
+	then
+		printf "\n"
+	else
+		printf "\t"
+	fi
+} 
+
+printf "\n"
+
+for((x=0; x<= 255; x++))
+{
+	printf "%3d: %sbgplain%s" "${x}" "$(sgr_bgcolor "${x}")" "$(sgr_reset)"
+	
+	if (( (x % 8) == 7 )) 
+	then
+		printf "\n"
+	else
+		printf "\t"
+	fi
+} 
+
+printf "\n"
+
+for((x=0; x<= 255; x++))
+{
+	printf "%3d: %sbold%s" "${x}" "$(sgr_bold && sgr_fgcolor "${x}")" "$(sgr_reset)"
+	
+	if (( (x % 8) == 7 )) 
+	then
+		printf "\n"
+	else
+		printf "\t"
+	fi
+} 
+
+printf "\n"
+
+for((x=0; x<= 255; x++))
+{
+	printf "%3d: %sdim%s" "${x}" "$(sgr_dim && sgr_fgcolor "${x}")" "$(sgr_reset)"
+	
+	if (( (x % 8) == 7 )) 
+	then
+		printf "\n"
+	else
+		printf "\t"
+	fi
+} 
+
+printf "\n"
+
+for((x=0; x<= 255; x++))
+{
+	printf "%3d: %sitalics%s" "${x}" "$(sgr_italics && sgr_fgcolor "${x}")" "$(sgr_reset)"
+	
+	if (( (x % 8) == 7 )) 
+	then
+		printf "\n"
+	else
+		printf "\t"
+	fi
+} 
+
+printf "\n"
+
+for((x=0; x<= 255; x++))
+{
+	printf "%3d: %sbold+italics%s" "${x}" "$(sgr_bold && sgr_italics && sgr_fgcolor "${x}")" "$(sgr_reset)"
+	
+	if (( (x % 8) == 7 )) 
+	then
+		printf "\n"
+	else
+		printf "\t"
+	fi
+} 
+
+while (( "${#}" > 0 ))
+do
+	printf "\n"
+
+	for((x=0; x<= 255; x++))
+	{
+		printf "%3d: %sfg+bgplain%s" "${x}" "$(sgr_fgcolor "${1}" && sgr_bgcolor "${x}")" "$(sgr_reset)"
+	
+		if (( (x % 8) == 7 )) 
+		then
+			printf "\n"
+		else
+			printf "\t"
+		fi
+	}
+
+	shift 1;
+done

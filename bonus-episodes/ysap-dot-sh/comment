@@ -1,0 +1,70 @@
+Bonus comment for bonus episode!
+
+I'm going to use this comment to discuss colors, but I will note mostly for myself that the ysap.sh/json API may be useful to me in auto-creating skeletons for future content updates if I decide I want to do that.
+
+Regarding colors:
+
+Dave sets up the colors using hardcoded escape sequences as shell variables in a script in his repo. These are often called "ANSI Control Sequences," after ANSI, the standards body which originally defined those sequences. Development on that standard goes back to the days when terminals were actual hardware equipment that you wired up to physical servers via serial cables or similar. When I first started as a Unix administrator in 2000, my first data-center had not yet replaced the Wyse VT100 terminal on its "crash cart" with hardwired serial consoles. Consoles like these in turn replaced older legacy equipment, in some cases even including equipment which printed out terminal output in hardcopy. 
+
+Colors came very late to the standard. ECMA-48, which is the successor document to the last ANSI publication dealing with control sequences, only contemplates 8 colors plus the default, and also references a different standard called ISO 8613-6 and CCITT Recommendation T.416. In the years where software terminal emulators such as those based on xterm became preeminent, these were widely extended, first to 256 colors, and then to support the full range of colors available to modern computer displays. The deeper you run into those standards, the more likely you are to be emitting escape sequences that only work on some terminal emulators and not others.
+
+Dave's program sets: Gray, red, green, yellow, blue, and magenta. It can also set the dim and bold attributes, and reset to use no colors at all. All of these start with the common characters
+	\x1b[38;
+... and then a set of 1 or more positive integers separated by semicolons, and then a terminating letter 'm'.
+
+Researching why all this sets the colors it sets sent me down a pretty significant rabbit hole. Here's what I've learned so far:
+- Terminal control sequences are discussed in ECMA-48, which is a successor to an ANSI publication that evolved over the 1980s. 
+- ECMA-48 delegates part of the problem space to a separate specification, which you can pay $250 US to download in PDF as ISO 8613-6, or read for free as CCITT Recommendation T.416.
+- T.416 also references T.412, which also references T.414. These jointly punt and say that the way Dave is setting colors here is "implementation specific." The implementation in question is the xterm implementation, which has been widely copied by most if not all modern software terminal emulators.
+
+So, let's break this up in a little more detail.
+
+Dave's colors script contains:
+	GRAY_COLOR='\x1b[38;5;8m'
+	RED_COLOR='\x1b[38;5;9m'
+	GREEN_COLOR='\x1b[38;5;10m'
+	YELLOW_COLOR='\x1b[38;5;11m'
+	BLUE_COLOR='\x1b[38;5;12m'
+	MAGENTA_COLOR='\x1b[38;5;13m'
+	DIM_COLOR='\x1b[38;2m'
+	BOLD_COLOR='\x1b[38;1m'
+	RST_COLOR='\x1b[38;0m'
+
+He turns these into actual escape sequences by expanding the variables later on without doing any special double-quote stuff. When those strings are expanded back from variable, the bit which reads:
+	\x1b[ 
+is the hex-escape for an ASCII escape character followed by a right square bracket, which ECMA-48 calls the "Control Sequence Introducer" or CSI. We know that the bit above is the sequence for the CSI because of clause 8.3.16 in the specification, which gives the sequence for that character as "ESC 05/11". The doc defines ESC to mean the bytes in means elsewhere, but here 05/11 corresponds to hex \x5b, which we can learn in various ways is the ASCII [ character. 
+
+CSI, followed by a string of semicolon-separated positive integers, followed by a terminating 'm', is defined in clause 8.3.117 of ECMA-48 as a "Set Graphic Rendition" instruction, or SGR. The semicolon-separated set of positive integers is the parameter set. 
+
+I do find ECMA-48 hard to read. I just gave my definition of SGR above. Here's ECMA-48's:
+	Notation: (Ps...)
+	Representation: CSI Ps... 06/13
+	Parameter default value: Ps = 0 
+
+The 'Ps...' notation is defined elsewhere in the document as a control sequence with any number of "selective parameters" and gives semicolon as the separator there.
+
+For all of Dave's definitions above, the first parameter is the value 38.
+
+Clause 8.3.117, after describing what an SGR is, says that a 38 means:
+	(reserved for future standardization; intended for setting character foreground colour as specified in ISO 8613-6 [CCITT Recommendation T.416]) 
+
+Searching through T.416 and the documents it references tells is what the second parameter means, which is that there will be a third parameter and that this parameter corresponds to the index number for a color given in a "content colour table," and that which indexes correspond to which colors is implementation-specific. This standard also specifies how to describe colors much more directly and elaborately using 24-bit color space, but that's not what Dave's doing here and that's probably a good thing because there's a good chance that many terminals won't support it.
+
+I found a document (https://www.ditig.com/publications/256-colors-cheat-sheet) which seems more like a round-up of unofficial sources than it does anything authoritative, which refers to colors 0 through 15 in that color table as the "xterm system colors." Most likely there's either some document or some .h file included in X11 source which further codifies this, but I'm going to stop digging for now, because we've already learned enough to authoritatively say:
+- <ESC>[ is the Control Sequence Introducer (CSI) because ECMA-48 says it is, in clause 8.3.16.
+- The ending 'm' character on the sequence denotes the whole sequence as a Set Graphic Rendition (SGR) instruction, again because ECMA-48 says it does, in clause 8.3.117.
+- Dave is always using a first sequence of 38, meaning to set the foreground color. He also could have used a 48 to set the background color. ECMA-48 says to refer to CCITT Recommendation T.416 for detail about the behavior of this control sequence family.
+- T.416 clause 13.1.8, expanding on the SGR definition from ECMA-48, says that when the second parameter is 5, the third parameter is a color picked by your terminal from a standard table.
+- By convention it's your terminal that decides which third parameter corresponds to which color, and your terminal likely copies its defaults from xterm's defaults. 
+
+It actually looks to me that the 38; preceding the 0m, 1m, and 2m sequences is erroneous and is being disregarded by the terminal. When I modify Dave's sequences to omit those, I still get the same attribute modifications.
+
+That last one, 0m, which Dave calls RST_COLOR, is called 'sgr0' when it appears elsewhere, and is available to 'tput' in many terminal types, because it has been specified in terminfo files in a way most colors are not.
+
+Additional work for me, which my "this feels incomplete" brain will return to at some point, is to look more into the history of how Xterm implemented this stuff.
+
+Now for the really fun part. Want to see this all in action? Go to my git repo (https://github.com/extrageneity/ysap-comments/) and look in bonus-episodes/ysap-dot-sh/frob-colors. It's a bash script which takes 0 or more arguments, each argument being an integer from 0 through 255. (No error handling if you give it stuff which isn't that. Sorry, I'm doing this for free.) It will emit all possible color control sequences, for both bgcolor and background color, from 0 through 255, in combination with each of the bold/dim/italics attribute sequences, plus the combination of bold+italics on the same field. If you give it arguments, for each argument you give it, it will set the foreground color to the number given by that argument, and try it with all possible background colors.
+
+Instead of trying to learn which colors xterm set to which color indexes, I suggest using a program like this one, and simply keep in mind that colors 0 through 15 are more likely to be portable to non-xterm terminals than the rest will.
+
+Happy color-highlighting of your text!

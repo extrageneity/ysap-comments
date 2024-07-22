@@ -1,6 +1,6 @@
 Bonus comment for bonus episode!
 
-I'm going to use this comment to discuss colors, but I will note mostly for myself that the ysap.sh/json API may be useful to me in auto-creating skeletons for future content updates if I decide I want to do that.
+I'm going to use this comment to discuss colors, but I will note mostly for myself that the json API Dave demo's in the video may be useful to me in auto-creating templates for future content updates if I decide I want to do that.
 
 Regarding colors:
 
@@ -50,7 +50,7 @@ Clause 8.3.117, after describing what an SGR is, says that a 38 means:
 
 Searching through T.416 and the documents it references tells is what the second parameter means, which is that there will be a third parameter and that this parameter corresponds to the index number for a color given in a "content colour table," and that which indexes correspond to which colors is implementation-specific. This standard also specifies how to describe colors much more directly and elaborately using 24-bit color space, but that's not what Dave's doing here and that's probably a good thing because there's a good chance that many terminals won't support it.
 
-I found a document (https://www.ditig.com/publications/256-colors-cheat-sheet) which seems more like a round-up of unofficial sources than it does anything authoritative, which refers to colors 0 through 15 in that color table as the "xterm system colors." Most likely there's either some document or some .h file included in X11 source which further codifies this, but I'm going to stop digging for now, because we've already learned enough to authoritatively say:
+I found a document (which I won't link here, out of concern it's causing YouTube to eat my comment) which seems more like a round-up of unofficial sources than it does anything authoritative, which refers to colors 0 through 15 in that color table as the "xterm system colors." Most likely there's either some document or some .h file included in X11 source which further codifies this, but I'm going to stop digging for now, because we've already learned enough to authoritatively say:
 - <ESC>[ is the Control Sequence Introducer (CSI) because ECMA-48 says it is, in clause 8.3.16.
 - The ending 'm' character on the sequence denotes the whole sequence as a Set Graphic Rendition (SGR) instruction, again because ECMA-48 says it does, in clause 8.3.117.
 - Dave is always using a first sequence of 38, meaning to set the foreground color. He also could have used a 48 to set the background color. ECMA-48 says to refer to CCITT Recommendation T.416 for detail about the behavior of this control sequence family.
@@ -63,7 +63,7 @@ That last one, 0m, which Dave calls RST_COLOR, is called 'sgr0' when it appears 
 
 Additional work for me, which my "this feels incomplete" brain will return to at some point, is to look more into the history of how Xterm implemented this stuff.
 
-Now for the really fun part. Want to see this all in action? Go to my git repo (https://github.com/extrageneity/ysap-comments/) and look in bonus-episodes/ysap-dot-sh/frob-colors. It's a bash script which takes 0 or more arguments, each argument being an integer from 0 through 255. (No error handling if you give it stuff which isn't that. Sorry, I'm doing this for free.) It will emit all possible color control sequences, for both bgcolor and background color, from 0 through 255, in combination with each of the bold/dim/italics attribute sequences, plus the combination of bold+italics on the same field. If you give it arguments, for each argument you give it, it will set the foreground color to the number given by that argument, and try it with all possible background colors.
+Now for the really fun part. Want to see this all in action? Go to my git repo (on GitHub, extrageneity/ysap-comments)  and look in bonus-episodes/ysap-dot-sh/frob-colors. It's a bash script which takes 0 or more arguments, each argument being an integer from 0 through 255. (No error handling if you give it stuff which isn't that. Sorry, I'm doing this for free.) It will emit all possible color control sequences, for both bgcolor and background color, from 0 through 255, in combination with each of the bold/dim/italics attribute sequences, plus the combination of bold+italics on the same field. If you give it arguments, for each argument you give it, it will set the foreground color to the number given by that argument, and try it with all possible background colors.
 
 Instead of trying to learn which colors xterm set to which color indexes, I suggest using a program like this one, and simply keep in mind that colors 0 through 15 are more likely to be portable to non-xterm terminals than the rest will.
 

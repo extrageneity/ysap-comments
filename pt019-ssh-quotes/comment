@@ -52,7 +52,7 @@ If we try: ssh void 'sudo -i echo "$PWD"'
 - remote shell sets argv[] for sudo to: argv[0]='sudo', argv[1]='-i', argv[2]='echo', argv[3]='/home/dave' -- which is cringe
 - sudo sets argv[] for the root shell to:: argv[0]='bash', argv[1]='-c', argv[2]='echo /home/dave'
 
-One way to fix it: ssh void 'sudo -i '\''echo "$PWD"'\''
+One way to fix it: ssh void 'sudo -i '\''echo "$PWD"'\'
 - local bash sets argv[] for ssh to: argv[0]='ssh', argv[1]='void', argv[2]=bashstring, where bashstring contains literal single-quote (') characters, thus: sudo -i 'echo "$PWD"'
 - ssh sends argv[2], bashstring, to sshd as the remote command.
 - sshd sets argv[] for remote shell to: argv[0]='bash', argv[1]='-c', argv[2]=bashstring

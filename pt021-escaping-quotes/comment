@@ -1,0 +1,60 @@
+Episode 21 - Escaping and Wrangling quotes in Bash (bonus heredocs) 
+
+Dave's key quote from this episode:
+- "You're probably in too deep. You probably need to step back and re-evaluate what you're doing with your life."
+
+This, on the subject of how to incorporate a single-quote into a single-quoted string.
+
+Eric S. Raymond, in the Jargon File, a lexicon of Unix hacker slang from the earliest days of the open source movement, characterizes this kind of joke as "ha ha only serious." ESR write that these jokes are "Applied especially to parodies, absurdities, and ironic jokes that are both intended and perceived to contain a possibly disquieting amount of truth, or truths that are constructed on in-joke and self-parody."
+
+The tone is joking, but there's definitely an important truth in there. If you saw Dave's video and my comment about escaping quotes with ssh, you'll note that this really isn't in any way facetious or condescending advice. Part of being a good programmer in any language, bash included, is understanding which things you can probably do but should consider avoiding instead. In C programming, 'jump' statements and use of the ternary operator (cond ? expr1 : expr2) are both often discouraged in the literature.
+
+A thing you should be trying to learn, as early as possible in your journey with bash, is that escaping quotation marks should be a cue to ask if there's a better way to do what you're trying to do. This isn't to say that you should never do it, just that the part of your programming instincts which kicks in when something might be a bad idea should be looking at escaping of quotation marks as a time to consider this.
+
+Dave, across four sample scripts, demonstrates a few mechanisms of quoting:
+- Single-quotes, which as a reminder do not escape or expand anything quoted, the enclosing single-ticks are simply deleted and the contents are marked as exempt from any additional expansion, splitting, or special processing.
+- Double-quotes, which also exempt things from word-splitting but generally permit the C-style string escapes such as \t and \n, and do expansion of variables, interpolation of `cmd` and $(cmd) strings, and so on.
+- Here-documents specifying a bareword as the terminator, which redirect stdin from the script itself, continuing until the terminator is found, and permitting variables to be expanded.
+- Here-documents not specifying a quoted string as the terminator, which again redirect stdin from the script itself, continuing until the unquoted terminator is found, but not doing variable expansion.
+
+He also demonstrates but does not explicitly discuss an additional behavior, which is the way the string quoting and word splitting features interoperate in bash. 
+
+Before I get into that, I'll note two other quoting mechanisms which you see fairly often. 
+
+First: 
+	$'...' 
+
+This form is identical to single quotes, except the backslash-escaped characters are all honored, including double-quotes. The place I use this the most is restoring IFS to its default value, by doing:
+	IFS=$' \t\n'
+... but if you really do need to backslash-escape a single quote in a string, for instance in the command:
+	git commit -m 'Let's not talk about what happened here'
+(which needs the apostrophe in "Let's" escaped to avoid a quoting mismatch) you can just give:
+	git commit -m $'Let\'s not talk about what happened here'
+... and get the behavior you intend. Again, your "should I rethink this?" antennae should already be perking up. But, this is a two-character change and fixes your command to work as intended. Often this is all you need.
+
+Next, the <<< operator, sometimes called the here-string, which works the same way as a here-doc when you only want to supply a single line of stdin to a command. I'm not going to talk about this one too much because as relates to the subject of this episode, how to get better at escaping quotation marks, we don't really need it.
+
+Dave's fixed version of 02-uh-uh has syntax like:
+	'this is an '\''example'\'' of getting a single-quoted string to contain single-quotes'
+
+... but in Dave's explanation, he explains that this isn't actually what's happening. What he's really doing here is having bash use two different types of string-processing semantics to generate a field that would be supplied to a command as a single argument. Single-quote semantics is obvious, but what's the other? Bare strings! The \' that appears twice in the string is not processed by the part of bash which handles single-quote logic, it's processed by the part of bash which handles any text not subject to any quoting at all.
+
+So what we're doing is having bash assemble a single command argument by concatenating three single-quoted strings:
+	'this is an '
+	'example'
+	' of getting a single-quoted string to contain single-quotes' 
+with no joining character, and inserting a literal single-quote (') character on either side of the second string. Five different pieces of text in total, all treated as one after quote removal and processing of the two backslash-escapes.
+
+The reason all this gets treated as a single argument by bash is because there are no spaces between these five different pieces of text. Word-splitting is only done on unquoted spaces, and we have none here. This actually means we could simplify our example further:
+	'this is an '\'example\'' of getting a single-quoted string to contain single-quotes'
+... and get the same ultimate treatment by bash, only now we would be concatenating together three bits of text rather than five. Our first bit and our last bit our the same, but our middle three bits all become a single one, a literal double-quote, followed by the word example, followed by another literal double-quote. No spaces involved so it will all still be treated as one argument by bash.
+
+If your warning signals about "should I really be escaping a quotation mark?" go through, get yourself in the habit of thinking about how word splitting will apply to the affected string. Build up mental muscles around being able to analyze a complex, partially-quoted, partially-escaped bash string, and understand what the size of the resulting argv[] array will be in whatever command you invoke. 
+
+Here-docs are presented here by Dave as a better solution to the problem, and I suppose on some level they are, but I do want to point out, Dave refactored what his programs are doing when he jumps to 03-heredoc. His first three scripts are all just passing single arguments, first to variable assignment, and second to the echo builtin.
+
+His last script, instead, is assigning a variable from stdin. This, if you watched the ssh video and read my comment there, is often your best trap-door out of complex string-quoting hell: find a way to communicate with the next process in the chain over its stdin, instead of via its positional parameters. A here-doc is a way of doing that. So Dave doesn't explicitly call out that he's refactoring, but he is. 
+
+None of this is especially magical, and my hope is that if you've been watching Dave's previous videos closely, as well as following along with all of my ysapc-comments write-ups, nothing he shared here should be especially new or surprising to you. We were dealing with the interactions between word splitting and string quoting all the way back in episode.
+
+Happy code simplification!

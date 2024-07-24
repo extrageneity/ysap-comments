@@ -5,7 +5,7 @@ Dave's key quote from this episode:
 
 This, on the subject of how to incorporate a single-quote into a single-quoted string.
 
-Eric S. Raymond, in the Jargon File, a lexicon of Unix hacker slang from the earliest days of the open source movement, characterizes this kind of joke as "ha ha only serious." ESR write that these jokes are "Applied especially to parodies, absurdities, and ironic jokes that are both intended and perceived to contain a possibly disquieting amount of truth, or truths that are constructed on in-joke and self-parody."
+Eric S. Raymond, in the Jargon File, a lexicon of Unix hacker slang from the earliest days of the open source movement, characterizes this kind of joke as "ha ha only serious." ESR writes that these jokes are "Applied especially to parodies, absurdities, and ironic jokes that are both intended and perceived to contain a possibly disquieting amount of truth, or truths that are constructed on in-joke and self-parody."
 
 The tone is joking, but there's definitely an important truth in there. If you saw Dave's video and my comment about escaping quotes with ssh, you'll note that this really isn't in any way facetious or condescending advice. Part of being a good programmer in any language, bash included, is understanding which things you can probably do but should consider avoiding instead. In C programming, 'jump' statements and use of the ternary operator (cond ? expr1 : expr2) are both often discouraged in the literature.
 

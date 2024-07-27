@@ -8,9 +8,9 @@ Several of Dave's recent videos have discussed that escaping quotation marks is 
 
 Some key points to be aware of about this: 
 - As noted above, the command you're substituting is evaluated in a subshell, just like when you're doing a pipe. So any variable modifications you make inside the substitution will not be visible in the invoking context. 
-- If you don't quote the substitution, as in $(dig +short www.daveeddy.com AAAA) it will not be subject to bash word-splitting. If you do quote, as in "$(dig +short www.daveeddy.com AAAA)" then the result will be treated as a single word by bash.
+- If you don't quote the substitution, as in $(dig +short www.daveeddy.com AAAA) it will be subject to bash word-splitting. If you do quote, as in "$(dig +short www.daveeddy.com AAAA)" then the result will instead be treated as a single word by bash.
 - Standard error is not substituted. It goes the same place as it does in the invoking context. This can sometimes be what you want, and sometimes not. File handle redirections are all possible inside the substituted command.
-- It can sometimes be confusing in scripts if you're using both $(( math-expression )) and $( command-for-substitution ) in a single script. Assigning to local variables can be helpful in that case. 
+- It can sometimes be confusing in scripts if you're using both $(( math-expression )) and $( command-for-substitution ) in a single script. Assigning the result of either expression to a variable, and then referencing the variable in the other construction, instead of putting a math expression directly inside a command substitution or vice versa, can make your script easier to understand.
 - If you give no command at all, and just direct stdin from a file, the contents of the file get substituted. So you could, for instance, do: current_motd="$(< /etc/motd)" and save yourself the 'cat' invocation!
 - There's no requirement that the $( part of a substitution appears on the same line of the script as the closing ) character. Be willing to break up your commands for readability!
 

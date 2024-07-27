@@ -1,0 +1,49 @@
+Episode 22 - Using `backticks` in bash (command substitution)
+
+In this video, Dave demonstrates command substitution at a high level. In command substitution, a bash expression is evaluated in a subshell, and the standard output of that command is substituted in place of the command and its enclosing quotations.
+
+You can either do command substitution by enclosing the command in backtick (`) characters, or by enclosing it in a $( expression ) construct. 
+
+Several of Dave's recent videos have discussed that escaping quotation marks is a sign that it's time to refactor a script. Command substitution is such a useful and pervasive pattern in shell scripting that you might end up nesting substitutions more often than you think, though. So bash, and many other Bourne shell variant scripting languages, have all introduced the $( ... ) construct as a more expressive way of doing the same thing.
+
+Some key points to be aware of about this: 
+- As noted above, the command you're substituting is evaluated in a subshell, just like when you're doing a pipe. So any variable modifications you make inside the substitution will not be visible in the invoking context. 
+- If you don't quote the substitution, as in $(dig +short www.daveeddy.com AAAA) it will not be subject to bash word-splitting. If you do quote, as in "$(dig +short www.daveeddy.com AAAA)" then the result will be treated as a single word by bash.
+- Standard error is not substituted. It goes the same place as it does in the invoking context. This can sometimes be what you want, and sometimes not. File handle redirections are all possible inside the substituted command.
+- It can sometimes be confusing in scripts if you're using both $(( math-expression )) and $( command-for-substitution ) in a single script. Assigning to local variables can be helpful in that case. 
+- If you give no command at all, and just direct stdin from a file, the contents of the file get substituted. So you could, for instance, do: current_motd="$(< /etc/motd)" and save yourself the 'cat' invocation!
+- There's no requirement that the $( part of a substitution appears on the same line of the script as the closing ) character. Be willing to break up your commands for readability!
+
+Dave closes this video by noting that command substitution can often be refactored away completely. Why would you want to do that? First, every time you do it, bash is creating subshells, adding overhead and complexity. Second, generally when you do it, bash is invoking some secondary command, again creating more overhead. But more importantly, it adds complexity. I'll share a function here from my own shell environment which needs refactoring to do away with command substitution:
+
+function _displayplacer_current_config_serial()
+{
+	# last line of displayplacer list is the current configuration
+	# standard lines use persistent screen ids, but these are not always reliable.
+	displayplacer list | tail -1 | sed -e "$(
+		displayplacer list |
+		egrep '(Persistent|Serial) screen id' |
+		gawk '
+			/Persistent/ {
+				printf("s/%s/",$NF);
+			}
+
+			/Serial/ {
+				printf("%s/g;",$NF);
+			}
+		'
+	)"
+}
+
+displayplacer is a MacOS utility which lets you configure desktop display geometry using the CLI. If you run 'displayplacer list' the last line of its output is a command you could run which would cause displayplacer to revert the OS to the currently configured geometry, resolution, etc. That command includes identifiers for the displays called 'screen ids', by default using a form called the 'persistent screen id'. My use of docking station means it's better for me to use the 'serial screen id', so the command above alters that last line of displayplacer output to contain serial screen ids instead of persistent screen ids, using command substitution to run a pipeline that generates a sed expression to replace the screen ids as appropriate.
+
+This whole thing is cringe for a few reasons:
+1. I could do the whole thing with one invocation of displayplacer list.
+2. I could do the whole thing using awk without even command substitution... in probably fewer lines of code!
+3. Even this form, using sed and awk together, is also using egrep unnecessarily. I could just delete the egrep line and add the ' screen id' to my gawk regexes and get identical behavior with one less fork.
+
+The only reason I haven't already fixed it is I have reason to believe that 'displayplacer list' will begin to offer optional output in either JSON or YAML and I'm kind of waiting for that to happen before I touch this again.
+
+For today, though, I'm glad it's here. It shows not just command substitution in real-world action, but also an example of me being cringe instead of based. I, too, suck at programming.
+
+Happy bash expression writing!

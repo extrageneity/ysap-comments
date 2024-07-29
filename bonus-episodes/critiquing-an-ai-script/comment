@@ -1,0 +1,25 @@
+This doesn't warrant a full comment from me, but I will note that for me the fatal flaw with this ChatGPT approach isn't just that it requires GNU find, it's that modern GNU find has a -delete switch which is likely preferable to running rm, making wise use of xargs or otherwise. Even POSIX find also has a -ls switch if you truly want to list files.
+
+But, really, none of this is ChatGPT's fault. An LLM like ChatGPT "predicts the next text" so if you give it requirements, what it's showing you back is what it thinks a person would be most likely to say in response to those requirements. You aren't actually asking ChatGPT to write a script for you, you're asking it to show you what it thinks a statistically likely script for someone to write would be.
+
+Its output is yours to review, modify, improve, and especially to understand.
+
+My employer recently starting using a new videoconferencing app that I have to sign into and out of every day. A few weeks ago I used ChatGPT to help me write AppleScript to interact with that app on my behalf and sign out of it for me. I barely know any AppleScript and in the end, after much iteration, not only do I know AppleScript better than I did, I was also able to do a fairly complex thing with it in a reasonably supportable way.
+
+But the approach here wasn't: "Have it write a script for me." It was to ask it what kind of script it thought someone would write, and then test and validate its approach, and come back to it with feedback about what did and didn't work about that approach, iteratively, until I got to a point where I could carry the solution over the finish line myself.
+
+Using LLMs is increasingly going to be a part of being a programmer. The "you suck at programming" topic here is not "ChatGPT is worse at this than you." Rather, you need to. be learning all the same tips, tricks, and pitfalls that you would learn to shell script yourself in order to be able to effectively supervise the scripting done by the program. 
+
+Dave's feedback, broadly, was:
+1. This script is not portable to OSes other than Linux.
+2. This script wastes forks unnecessarily and will not scale well to large file counts. 
+3. This script does not observe best practices for code style.
+4. This script operates in ways which would be unhelpful to a real-world user, including not permitting the user to delete files with bash field separators in their names..
+
+Your goal in studying Dave's channel is not just to get better at bash scripting, it's to be able to produce feedback like that about bash scripts, whether they're scripts primarily written by you, scripts primarily written by ChatGPT, or scripts written by some colleague/collaborator on a project.
+
+Getting better at tech is a lot less about knowing how to do things, and a lot more about knowing which things are wise or unwise to do. You can perhaps get an LLM to display that kind of wisdom if you prompt it carefully enough, but how do you write those prompts if you don't have the wisdom yourself?
+
+Okay, fine, that's a full comment from me. I'll commit it to the repo under bonus-episodes.
+
+Happy prompting!

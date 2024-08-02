@@ -1,0 +1,97 @@
+Episode 23, Understanding Unix Login Shells
+
+Today I'll cover four topics.
+
+TOPIC 1: execve(), argv[0] vs the program argument
+
+From a recent Linux, the function prototype for the execve() system call is:
+	int execve(const char *pathname, char *const _Nullable argv[], char *const _Nullable envp[]);
+
+Regardless of how you spawn your shell, an execve() or similar system call always occurs. sshd does it, sudo and su both do it, bash does it. Understanding shell invocation starts with understanding what execve() for a bash shell looks like.
+
+pathname, in the above, is the canonical path to the binary to be executed, in our case normally /usr/bin/bash. argv is an array of strings, the first element of this is the name of the program that should be displayed as $0, which gets displayed when you list your program in the process table using the ps(1) command, for instance with something like ps -f -p $$. envp is an array of key/value pairs to be set up as the environment variables in your shell.
+
+So, if we already know the path of the program /usr/bin/bash, why are we also specifying the name of the program in argv[0]? Is that important here? From the INVOCATION of the bash man page:
+	A login shell is one whose first character of argument zero is a -, or one started with the --login option.
+
+When you first log into the system, if bash is your default shell, the $0 of your shell will be '-bash'. As we noted in the comments for episode 19, sshd does this for you explicitly in the course of setting up your login shell. Various other system login and user switching methods all do the same thing. It's a Unix convention, observed not just for bash but for all shells.
+
+You can do it yourself! Set up a .bash_profile and a .bashrc which identify themselves the way Dave did in this video, then try running each of these examples in a bash shell.
+
+Example one:
+	exec bash
+	echo $0
+
+Example two:
+	exec -a '-bash' $(type -P bash)
+	echo $0
+
+Example three:
+	MYVAR=myvar exec -a '-- I suck at programming (bash)' $(type -P bash)
+	echo $0
+	env | grep MYVAR
+
+Did the first one run .bash_profile or .bashrc? What about the second?
+
+These examples demonstrate how bash gives you direct control of all the arguments to execve() when you use the exec builtin. In the first example, the bash builtin 'exec' decided what both execve()'s pathname and argv[] should be based on the single argument you gave it. In the second example, we set pathname and argv[0] separately. In the third example, we added MYVAR as an additional environment variable to be given to the new bash shell.
+
+TOPIC 2: sudo, su, and setuid programs generally.
+Here, Dave demonstrates two ways of changing your user ID to root in his program, sudo and su. 
+
+su is the original means of doing this. The name of the program means 'substitute user' although I've also heard it to mean 'switch user' or 'super user'. Think about what happens in all the examples above when you invoke bash, how the shell is calling execve() to execute them. If you type, in your shell:
+	su - root
+What happens?
+
+1. Bash searches for su in your $PATH, typically finding /usr/bin/su.
+2. Bash calls execve(), setting pathname to /usr/bin/su, setting argv[0] to su, setting argv[1] to -, and setting argv[2] to root.
+3. The kernel, processing the system call, notes the permissions on your su command. On my local MacBook, if I run 'ls -l /usr/bin/su' I see:
+	-rwsr-xr-x  1 root  wheel  121920 May  7 02:01 /usr/bin/su
+That 's' in the user bitmask means that the program is 'setuid' and anyone on the system who runs it will run it with root user permissions.
+4. The su binary, seeing that your real user ID is not root, prompts you for a password. (Dave avoids that above by using sudo.) 
+5. If you enter the password for the root user correctly, su spawns a login shell for you as the root user using execve().
+
+If you look at the man page for su, you will see it can be used to execute arbitrary commands as any user, not just to get a root shell. sudo does much the same as what su does, with a couple of key differences: Most importantly, it reads your sudoers file to implement a lot of rules about whether or not you will be permitted to invoke the command without a password. Secondarily, it also gives you a lot more granular control than su does about how your environment is changed before the execve() happens. You can cause your own non-privileged shell environment to be preserved including $HOME staying as is, or get behavior more like 'su' behavior. In fact an argument can be made that Dave's final example here, doing sudo su - root, is redundant. He also demonstrated sudo -i, which gives a nearly identical result with one less exec.
+
+Nothing truly arcane here. Just the same thing you're doing with 'exec -a "-bash" $(type -P bash)', just setuid to root before you proceed, and parsing root's shell out of the password database instead of using the shell you picked by your own path.
+
+All the rest of this is just bash-specific behavior, described in the INVOCATION section of that man page. Rather than me reciting all of that behavior here, I suggest you go read it and then come back here for a little more discussion.
+
+TOPIC 3: What is a login shell, what is an interactive shell, and why aren't they the same thing?
+
+A login shell, as noted above, is just a shell where argv[0] starts with a dash character, or where bash has been launched with --login. It's normally interactive but it doesn't have to me. (On a Linux box to experiment, where I could ssh into localhost as myself without a password, I did: printf 'echo $0\n' | ssh $USER@0
+
+... and got an argv[0] of '-bash'
+
+An interactive shell is any shell where stdin and stderr are both terminal devices, or where bash was started interactively.
+
+A shell can be both a login shell and an interactive shell, just one of the two, or neither.
+
+A login shell sources special scripts immediately after login which do things you probably only want to do once per session, such as display the message of the day, or add directories to your $PATH.
+
+A non-login interactive shell sources different special scripts, so that you can get your environment set back up the way you expect after doing a basic 'exec bash', or for other reasons. Sometimes this sourced script emits terminal control sequences (depending on your $TERM) to set things back to a clean state--or even uses various means to try to auto-detect your terminal, something which won't behave as intended if your shell is connected to a pipe or a file instead of a terminal.
+
+The design intention here is to only do costly or chatty things as often as needed, and no more often than that.
+
+In that spirit, I'll call out a best practice here. If you put anything in your .bash_profile or .bashrc which assume they're being sourced from a terminal session rather than from a non-interactive script, put those things inside a block like this:
+	if [[ "$-" =~ "i" ]]
+	then
+		...
+	fi
+
+Include things here like your assignment of PS1, use of any commands like 'stty sane' or 'clear' or whatever. Scripts you run, even if you have those scripts source ~/.bashrc to get things like $PATH and stuff set up, will invoke a little faster and cleaner.
+
+The $- variable has a list of flags which apply to bash; the 'i', which you regex-match above, is the flag that notes the session is interactive. You can also do [[ -t 0 ]], which evaluates true if stdin is a terminal device instead of a script, but this may not always be what you want. 
+
+TOPIC 4: Why are there both global and local environments? Why bother with /etc/profile at all?
+
+The short answer is that this is a legacy from the days when most Unix systems were multi-user. /etc/profile was a script that could be guaranteed to execute for all users when they logged in, without their being able to disable it. It commonly did things like print a message of the day, set some standard ulimit stuff, warn the user if they were exceeding disk quota, etc.
+
+Now, in an era where so many hosts are only ever touched by a single interactive user, or only have service accounts and just-in-time provisioned landing users, it's more commonly used to provide OS-specific defaults for system packages. On Ubuntu/Debian family systems, /etc/profile and /etc/bash.bashrc both source other files, such as /etc/profile.d/*.sh; this permits additionally-installed packages to set their own override-able OS defaults as environment variables. Tab completions are also provided in this manner. I strongly recommend, when exploring a new Linux distro or Unix-based OS for the first time, or when first receiving a shell account on a shared server at some employer or institution, read /etc/profile and familiarize yourself with the ways it is being used to customize bash for that host.
+
+CONCLUSIONS.
+
+We've discussed before, sucking less at programming means de-mystifying how your environment works. Much of what you program in bash in the real world will be developed interactively and then invoked headlessly, from a CI/CD pipeline, a cron job, whatever. You will inevitably, someday, run into some problem like a script working when you execute it interactively, but dying a death when you run it by other means, because it's missing something like a directory in $PATH or $LD_LIBRARY_PATH. Understanding which scripts influence invocation, under which conditions, and under which order, both on initial login and when switching users via sudo and other means, is essential to making your operating environment less surprising to you.
+
+Having watched Dave's video and read this comment, my hope is that when you begin to further customize your shell environment, you will have a much better sense of where to apply which customizations, and why, and also have a better sense of how to fix problems when scripts you write behave inconsistently depending on how they're executed.
+
+Happy customizing!

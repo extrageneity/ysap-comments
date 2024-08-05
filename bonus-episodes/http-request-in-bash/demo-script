@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+lines=(
+	'GET /ping HTTP/1.1'
+	'Host: ysap.daveeddy.com'
+	'Connection: close'
+	''
+)
+
+exec {mysock}<>/dev/tcp/ysap.daveeddy.com/80
+printf "Opened socket on fd %d\n" "${mysock}"
+
+printf "%s\r\n" "${lines[@]}" >&${mysock}
+
+while read <&${mysock}
+do
+	echo "Got reply: ${REPLY}"
+done
+
+exec {mysock}>&-

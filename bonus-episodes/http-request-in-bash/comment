@@ -1,0 +1,37 @@
+Another bonus episode, another short comment that probably won't be short.
+
+What here is bash specific?
+1. printf with fewer formatter tokens (%s) than arguments
+From the 'help printf' builtin:
+	 "The format is re-used as necessary to consume all of the arguments."
+
+Dave gave:
+	printf "%s\r\n" "${lines[@]}" 
+... with lines as an array with four members. Each of these members got that single-token format, including the separator characters. Neat trick, and new to me, I'd never run printf with more arguments than tokens like that before. The same thing does work in zsh for those who are interested.
+
+2. <> operator.
+The <> operator means to open the file for both reading and writing. Dave, prefixing it with a 3, is asking for a new file descriptor, numbered 3, to be created. In a more complex program you might instead do something like: {mysock}<>/dev/tcp/ysap.daveeddy.com/80. In this syntax, Bash chooses the number of the file descriptor to use, opens it, and then assigns that number to $mysock for later use. 
+
+In my git repo, github.com/extrageneity/ysap-comments/, under the bonus-episodes/http-request-in-bash directory, I provide a demo script which shows this syntax. 
+
+3. Redirecting a file handle to be closed. 
+
+Dave shows 3>&- as a way of explicitly closing the connection. Bash does this for you for free when the script terminates, but you don't want to forget about this in a longer-lived program which is dealing with multiple connections.
+
+4. /dev/tcp/<hostname>/<port>
+
+Dave suggests in his commentary that this is limited to Linux, but that /dev/tcp/host/port concept is actually implemented by bash itself. It also works on MacOS as long as you're using a new enough bash to support it. There are equivalent constructs available in GNU awk as well. You can't necessarily build a bash on every OS which implements this, but it works on a surprisingly wide set of them, at least in bash 5.2 and newer.
+
+What here is HTTP-specific?
+- CR/LF as the line terminator on both request and response. Note that Dave's script (and my version) when they print the server response, are not stripping the carriage returns off the end of the server response lines. You need to be conscious that these "invisible" characters are there if you're actually parsing response headers, rather than just dumping the script to stdout.
+- Request line, host header, connection header, response header and response body on single response stream. Most modern HTTP clients in scripting languages let you inspect response headers and response bodies differently, but they aren't actually packaged this way by HTTP/1.1. It's all written to the same socket, the empty line ending with CR-LF denotes start of response entity. And the response entity is sent as-is; in Dave's 'pong' case it includes a newline but not a trailing carriage return. So a real script needs to statefully handle for CR-LF on headers bot newlines only in response bodies, if that's what your API provider implemented.
+
+I'll close by noting that increasingly, most resources you consume via a mechanism like this will use HTTPS rather than HTTP, and this approach does not scale well to the complexity of TLS handshaking.
+
+There is an extremely useful command, though, openssl s_client, which reads on stdin and writes on stdout, that does the TLS handshake for you, and encrypts and decrypts the messages for you. You read and write to it in plaintext, it encapsulates with TLS for transport, even supporting some of the modern TLS extensions like Server Name Indication (SNI) and even some limited support for ALPN, although I don't recommend trying to implement your own HTTP/2 client underneath s_client. 
+
+You could use an approach very much like Dave's script with a co-process, spawning openssl s_client as a co-process using the coproc builtin, or even just as a standard background process.
+
+There are times this approach is very useful, especially if you are attempting to implement handling in some application you're developing for malformed HTTP request headers. Simulating malformed headers using curl, or even standard HTTP client libraries available in Java, Python, Ruby, etc. can be very difficult, but your service may need to account for those, so being able to make test workloads which produce them, in either HTTP or HTTPS, is a very useful "suck less at programming" skill to have.
+
+Happy requesting and responding!

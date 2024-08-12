@@ -1,0 +1,47 @@
+Episode 24 - ssh Port Forwarding with `ssh -L`
+
+SSH supports a variety of different ways of different varieties of forwarding for ports, sockets, and streams. Today we'll talk about four, starting with -L, local port forwarding. Then we'll continue to -R for remote port forwarding, then to -D for dynamic local forwarding, then to -x for X11 port forwarding. Finally we'll conclude with a short discussion on places where the concepts of port forwarding translate to other areas you might care about as a programmer.
+
+Dave demonstrated local port forwarding, doing ssh -L 8000:localhost:8000 user@remotehost.
+
+In a more verbose language, this is saying to the ssh client program running on your local system: begin to listen for TCP port 8000 on all local network interfaces. Using the 'tunneling' concept built into the SSH protocol, ask the SSH daemon on the remote connection to relay any traffic we receive on that local listen port via TCP/IP to localhost:8000 on the remote network, resolving localhost using the remote host's DNS resolver.
+
+There are also ways using the -L syntax to ask it to only listen on a specific bind interface. This should actually be very common for you. If you are tunneling regularly and don't know what you're doing, it's generally safest to make sure all your local tunnels only listen on your local loopback (127.0.0.1) address, and _not_ on all interfaces. If you're not careful, other systems on your local network could connect to TCP:8000 on your system and end up accessing localhost:8000 on the remote system. This is likely not what you intend!
+
+You can also set up either the local or the remote end of an SSH connection to write to a Unix domain socket. Dave demonstrated one of these in a recent bonus episode about making an http request natively in bash. There are some very interesting control mechanisms you can set up doing this, for instance using software products like Varnish Cache where the administration channel is a Unix domain socket (or FIFO file) you can actually tunnel access to this socket via SSH and expose it as though it were a network listen port on the other end.
+
+This brings us to ssh -R, which is the inverse of ssh -L. Where ssh -L 8000:localhost:8000 asks for local binding and a remote TCP/IP connection, ssh -R 8000:localhost:8000 instead asks for a remote binding and a local TCP/IP connection. In other words, on the remote side of your SSH connection, sshd opens up an additional listen port on TCP:8000, and anything connecting to TCP:8000 on that host is now able to cause your local ssh client process to open a network connection to localhost:8000 on your local system.
+
+All this is encapsulated the exact same way by ssh and sshd: secure, and encrypted, using the SSH tunneling concept built into that network protocol itself.
+
+Next we'll discuss dynamic local forwarding, which is done using -D <port>. Again, this accepts an optional bind address, which you should probably use. This causes your local ssh client to set up a SOCKS proxy server capable of talking SOCKS4 and SOCKS5 for compliant clients, which includes most web browsers. I used to use this often in my job in order to simulate network behavior from outside of my employer's firewall, for example to see how a web page would render from outside of our WAF and off our whitelist.
+
+In this scenario, all connections opened by ssh on behalf of clients connecting to it are tunneled using the SSH protocol to the remote system, where sshd opens corresponding TCP/IP connections for them. In SOCKS4 all DNS resolution is done clientside; in SOCKS5 it is also possible to tunnel the DNS requests to the remote side.
+
+ssh -x is for X11 tunneling. In this scenario, you permit X client applications on the remote host to tunnel back to the X server on your local system. Here, the client reads your local DISPLAY variable and sets DISPLAY properly as an environment variable on the remote side. Some other niceties are also set up for you that you don't get from simply tunneling the listen port on your X11 server directly. I haven't used this feature in probably 15 years but when you need it, you absolutely positively need it.
+
+There are some other capabilities as well, but I'm less familiar with these so I won't discuss them here. One last command line switch I will mention is -N, especially when used in combination with -f or -n. ssh -N causes ssh not to execute a comamnd on the remote side. The connection just opens and sits, so that all you do is tunnel ports and similar. If you're opening a proxy server, you can run ssh -nN -D localhost:(port) remoteuser@remotehost, and put it in the background. You don't even have to have an open terminal for it, it's just a SOCKS5 proxy server as a daemon, the software just happening to be ssh. That plus some systemd type semantics to automatically restart the thing when it dies can feel very magical without implementing a full VPN infrastructure.
+
+Even if you don't ssh often, this is a pattern you'll probably want to familiarize yourself with. This concept of 'tunneling' connections through another protocol or service or command line crops up again and again. There's significant conceptual overlap between this and WebSockets, and you can even in some pathological cases set up an SSH tunnel, open an HTTPS session across the tunnel, and then set up WebSockets using the HTTPS connection. (Even if this is not something you would ever do for a legitimate reason you need to understand that it's a possibility because penetration tests against your WebSockets capable application might exploit the capability to reach out in directions your software did not plan for, either as part of inbound pivot or as part of exfiltration of data.)
+
+It should be easy to understand here, this is an extremely potent and difficult to control for means of letting an SSH connection reach across intended network boundaries. If you expose an sshd on a system, you need to think very hard about what tunneling if any you will allow it to participate in. This may even cause you to reconsider using SSH instead of some competing architecture that lets you gain console access via other means which permit for better governance.
+
+Much of this stuff will matter more to people dealing with security policy or network architecture than it does to pure programmers, but you should at least try to understand that the possibility exists.
+
+Another place where the pattern recurs is in containerization using Docker and related technologies. A central concept to these technologies is the idea that every container running on a physical host gets its own network interface where services can bind to whatever listen port they want, and container orchestration running on the physical host can map those container-side ports to separate ports externally. This in turn integrates with service discovery, with service mesh, with container-aware load balancers, etc. Under the hood, it's all doing something which is logically _very_ similar to SSH tunneling.
+
+Lastly, all this is very similar to what is done for you on border routers, firewalls, Internet gateways, etc. via NAT and VPN. At a network level, some thing is keeping the track of the fact that you tried to make a TCP/IP connection somewhere, and when you do that, in software it makes a second TCP/IP connection somewhere else, and relays packets between the two connections, adjusting various headers so that each side thinks it's talking to the resource it expected to talk to.
+
+There can be pitfalls with this approach. For instance, if I do:
+	ssh -L 443:www.youtube.com:443 user@host
+and then open a connection to:
+	https://localhost/
+then various things will not work as expected. First, during TLS handshaking, the X.509 certificate that my ssh client relays to me from sshd, which in turn got it from www.youtube.com, will be for www.youtube.com, not for localhost. Worse, the ALPN/SNI communication between my client and the ssh listener, which will say I want an HTTPS connection to a server called localhost, will be passed on by ssh to sshd and in turn to www.youtube.com, which may or may not even let the connection get as far as presenting a certificate.
+
+But what if a page on YouTube needs to give me a hyperlink which includes not just a local reference, but a canonical https://www.youtube.com/ reference? ssh and sshd won't know to rewrite this reference to be https://localhost/ instead--in fact, neither ssh or sshd will be in a position to decrypt the communication during normal operations.
+
+To fix any of this, I need to make a www.youtube.com entry in my local hosts file, pointing the IP there at 127.0.0.1. But there are even hazards to this.
+
+SSH tunneling isn't magic. It can solve a lot of problems for you, but it only knows how to do things that SSH itself knows how to do. Full VPNs and full-featured forward proxy servers are often what you need instead. But mastering this can be exceptionally helpful, especially if you're doing things like trying to do JMX diagnostics on a Java virtual machine which permits SSH but very tightly locks down incoming network ports. Understanding how to set up tunnels like this can really empower you to get further in your own debugging, without help from a dedicated network administrator, than you would otherwise be able to get.
+
+Happy tunneling!

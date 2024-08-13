@@ -1,0 +1,32 @@
+Episode 25 - Passwordless ssh with keys using `ssh-agent` 
+
+This will likely be a shorter comment. Dave's coverage here is pretty comprehensive for such a short video.
+
+I'll note a couple of things, though.
+
+First:
+
+When you run ssh-agent with no arguments, as Dave did, you are given a few lines of output which are themselves shell syntax. 
+Respectively, they assign an environment variable called SSH_AUTH_SOCK to a path on your disk, and export this environment variable.
+Then, they assign an environment variable called SSH_AGENT_PID, with the process ID of the SSH agent process that was just spawned in the background.
+Then, this pid is echoed to stdout.
+
+The intent is that normally you will supply the output of this command to the 'eval' builtin, which Dave has not yet covered in an episode.
+
+This is a fairly common pattern in shell environments, also used by CLIs for password managers, by tab completion autoloaders for various open source packages, and by some shell/OS package managers such as Homebrew. Instead of sourcing a script, you execute that script and pass its output to eval, causing your shell to execute them as though you had sourced the script or typed the commands.
+
+When you eval the output of ssh-agent, or otherwise set up those two variables in your shell, execution of subsequent commands like ssh and ssh-agent-add will be able to interact with the ssh-agent service. The first file is the path to a Unix Domain socket, or FIFO special file. Reads and writes on this file operate like sends and receives on a network connection.
+
+You can also run ssh-agent with arguments, which are command that will be executed. In this scenario, ssh-agent itself can become the parent of your interactive shell. It's doing the same thing, though: setting those two environment variables before it forks and executes your shell.
+
+The other part of this pattern, using a Unix Domain Socket as the command and control interface to a daemon, is also reasonably common, and is especially potent because I/O to that socket file can cross container boundaries or even networking boundaries if you do it right.
+
+Remember in the notes for Episode 24, we discussed how any of the SSH tunneling options permits you to establish a tunnel to a Unix Domain Socket instead of establishing a tunnel to an outbound network connection. 
+
+This is exactly how agent forwarding works as you SSH betweeen hosts! The ssh client, and sshd, tunnel network traffic targeting the remote agent over the SSH connection itself, using the same tunneling semantics as are set up for everything else. You get this essentially for free, although administrators may wish to turn it off in secure enterprise environments for some of the same data loss prevention reasons I discussed in my comments on the last episode.
+
+Does not knowing any of this make you suck at programming? Honestly, I'm not sure. But knowing it definitely does make it easier to operate in a secure manner, without having to either have unsecured SSH keys, _or_ having to endlessly type passphrases.
+
+Read up on how your local terminal program interoperates with ssh-agent. Even if you're just getting a local shell, your terminal might launch an ssh-agent for you in the ways I described above, making all of this absolutely seamless once you start using ssh-agent-add commands to load SSH keys into memory. If it doesn't, or if you don't want to manage things that way, this is definitely something you can customize in your .bash_profile, .bashrc, etc. There's more than one way to do it. If you do want to customize your shell environment to do this, episode 23 is a helpful one to review.
+
+Happy key management!

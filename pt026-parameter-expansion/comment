@@ -2,7 +2,7 @@ Episode 26, Basic Parameter Expansion in Bash
 
 It took me a couple of days to decide what to write here, because I couldn't think of much about how bash is working under the hood here to talk about. But I decided it's important to comment, because this is one of the most programmerly subjects so far in Dave's main series. Parameter expansion operators are really string manipulation operators, and unlock some of the most powerful capabilities in bash.
 
-There are over 20 of these available in the most recent bash versions. You can see the full list in the bash man page, or in section 3.5.3 of the Bash Reference Manual under parameter expansion.
+There are over 20 of these available in the most recent bash versions. You can see the full list in the bash man page, or in section 3.5.3 of the Bash Reference Manual under Shell Parameter Expansion.
 
 Dave only details about a quarter of those 20 here in this episode. 
 

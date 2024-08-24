@@ -1,0 +1,50 @@
+Episode 27 - Basic Unix Signals with `kill`
+
+Signals are a core mechanism for inter-process communication in Unix/Linux, and are an important thing to understand as a software developer working on these systems.
+
+Dave is using the 'kill' command here, but doesn't note that bash implements kill as a builtin, overriding a /bin/kill which is specified by POSIX. Both versions support a kill -l, (that's a lower-case letter L for those of you reading this in a sans-serif font), which gives the name to number mappings for all signals that can be sent to a process. These vary widely by OS--there are 31 signals available to me on MacOS, and 62 available to me on a recent Ubuntu. Educating yourself as to which ones are part of POSIX versus which ones are OS-specific is an important exercise if you will build signal handlers into your software.
+
+The signals supported by your OS are described in its man pages. I'll mostly be talking about Linux here, but there are equivalent pages for BSD variants like MacOS as well.  In Linux, the first place you want to go for reading is the signal(7) man page, which has a list of all the signals and is careful to denote which ones come in as part of POSIX versus which ones are very Linux-specific.
+
+This gets you part of the way there, what the signals are. Better descriptions of the signals you can see listed in 'kill -l', which is also generally the list of signals you can trap. The "what sends which signal" part is terminal/device dependent.
+
+Speaking in general terms, a terminal is actually implemented in Linux as two character devices. One device does I/O with whatever is interacting with the terminal. Typically this will be something like xterm or something like sshd. It's called the master device, although in more modern nomenclature we would probably call it something like the controlling device. The other device is connected with whatever is receiving input from the terminal, and is writing output back to the terminal. Typically this starts out as your bash shell and gets passed around to whatever commands bash executes. This is called the slave device in documentation, and might be instead called the "clone" device if we were defining new terms today.
+
+When you write various special characters and control sequences to a terminal, the device driver and the kernel between them can cause various signals to be sent. Some, like Ctrl-C, are written on the master side, and can be used to ask the kernel to send a signal to the process which is currently attached to the slave. Others, like Ctrl-G, are written on the client side, and are used to ask the terminal which is attached to the master to perform some behavior (like playing a bell noise) on the computer where the terminal is being displayed.
+
+In trying to understand what communication is possible via these special control sequences, at least on Linux, you should be reading the temrios(3) man page, as well as the console_codes(4) man page. The former is where you get the description of Ctrl-C sending SIGINT, Ctrl-Z sending SIGTSTP, and so on. It's also the man page that tells you why pressing Ctrl-U will delete your input back to the beginning of the line, which is a really helpful thing to know! The latter page shows all (or really, many of) the standard terminal control sequences implemented on Linux, including some of the ANSI color codes Dave demonstrated in a recent bonus episode.
+
+How does this translate back to signal handling generally, on the process side? Any process, by default, can receive a number of signals. By default, the kernel will handle a process being sent those signals in a number of default ways. Some cause the process to terminate, some cause the process to dump core, some cause the process to stop or resume. Some, provided specifically for inter-process communication, are initially ignored. Processes can trap these signals, and when they do, instead of executing the default action, the kernel will execute the code the trap points at. Two signals, KILL and STOP, cannot be trapped. "Stop" and "resume" in this context mean that the kernel simply ceases to allocate CPU to a process, and then resumes giving it CPU. The process itself isn't told anything happened to it--it's just as if a very long time passed between CPU ticks, because other processes on the system were getting all the available CPU. 
+
+A great way to test health checking mechanisms on a service: send kill -STOP to the process, wait until the health check fails, then send kill -CONT to the process, and wait until the health check starts passing again.
+
+Dave shows a little of all of this in his video: Control sequences causing signals to be sent; default behavior implemented by the kernel/OS when these signals are received; and how to override those defaults with code, called traps, in bash. But we can and should break down what he does in a little more detail, looking closely at his 02-all-lol script.
+
+First, he defines a function, on_signal, which just gives an 'echo' command. Then he traps SIGINT, SIGTERM, and SIGTSTP to all trigger that handler on execution. The bash process, on processing these calls to the trap builtin, executes kernel system calls setting up those traps. Then, he starts his loop, which successively:
+1. calls the echo builtin to say 'tick'
+2. calls the sleep command, which forks and execs a child process that blocks for 1 second and then terminates. 
+
+Dave did not tell bash to ignore any signals; one of the things you can do with trap is actually tell it to ignore signals, without executing any handler at all. Had he done this, those signals would also have been ignored by his sleep child process. But since he only set handlers, SIGINT, SIGTSTP, and SIGTERM are all handled in the default ways for the sleep binary.
+
+When Dave presses control-C while sleep is running, the sleep command is terminated early with SIGINT, the signal handler executes, and then the loop resumes with the next 'echo tick' command. 
+If Dave pressed control-backslash while sleep was running, SIGTERM would instead have been called in the child, and the same thing would have happened.
+When Dave pressed control-Z while sleep was running, the sleep command instead stopped, and the bash shell continued waiting for it to terminate. Because bash continues waiting, its signal handler is never executed. 
+
+This is important to understand: bash signal handlers only run if bash itself is in the foreground. 
+
+When a trap handler executes and bash is in the foreground, it isn't executing in parallel with the rest of your program. Your bash process is single-threaded and no new thread spawns. Rather, the shell jumps from the code point where the main script is executing, into the trap, and then jumps back at the end of the trap. Jumping is supported in a number of low-level languages such as C and its use is broadly discouraged because it can result in many undesirable and even dangerous behaviors. The same princples apply to signal handlers. Writing them in a way where they don't break your program is not for the innocent. Generally, if you're trapping a signal whose default behavior is to dump core or to terminate, it should be to let your program clean up whatever it needs to clean up, and then terminate as the signalling entity expects. If you want to simply ignore the signal instead, just do something like:
+	trap SIGINT ''
+... to cause both the shell and its children to ignore that signal. This will generally result in better behavior.
+
+I'll close by listing some of the common signals you might want to think about:
+- STOP and CONT I already mentioned above, for their utility in simulating a hanging process. You can also use them before attaching to the running process using gdb or gcore if you need to inspect its runtime memory without the process dying. I have, for instance, used this on a child in a prefork Apache server running mod_php to decode the SQL query it was sending to a backend MySQL database, when that query was never returning due to a corrupt index on the database server, and I was not in a position to modify the code to turn on code-level query logging.
+- HUP is called when the terminal loses connection, as in the case of an ssh client losing network connectivity to the server. SIGHUP, sent to daemonized processes, often causes them to re-open log files, re-read configuration, etc. 
+- USR1 and USR2, ignored by default in processes, are often used to ask those processes to do some kind of debugging. Sending USR1 to a Java Virtual Machine, for instance, will induce the JVM to write a thread dump to stderr, showing current call stacks for every thread in the machine.
+- SIGABRT, you typically don't trap, but instead call if you want your process to core dump before it terminates. This can be important if you need to inspect the memory state of the process using gdb or similar debuggers after the program dies.
+- SIGCHLD is called when a child process terminates. I have not had good luck getting bash to interoperate with SIGCHLD but in other programming languages it can tell you that it's time to call wait() or waitpid() and inspect the exit code of a child process.
+
+Understanding how Unix/Linux processes use signals is important to maturing yourself as a developer, regardless of what language you use. Understanding how to handle signals in bash can help you to do things like help a script to recover in situations where the default behavior of a Ctrl-C would be unhelpful; for example if you're calling tput smcup because your program will do curses-type behavior, you might want to trap SIGINT to have your script call tput rmcup before terminating, so that aborting your script doesn't leave it in a bad state. 
+
+So whether you're consuming this content and comment to grow yourself in bash specifically, or to grow yourself as a Unix/Linux programmer generally, this is a subject worth spending some time on.
+
+Happy signaling!

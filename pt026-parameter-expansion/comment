@@ -1,0 +1,59 @@
+Episode 26, Basic Parameter Expansion in Bash
+
+It took me a couple of days to decide what to write here, because I couldn't think of much about how bash is working under the hood here to talk about. But I decided it's important to comment, because this is one of the most programmerly subjects so far in Dave's main series. Parameter expansion operators are really string manipulation operators, and unlock some of the most powerful capabilities in bash.
+
+There are over 20 of these available in the most recent bash versions. You can see the full list in the bash man page, or in section 3.5.3 of the Bash Reference Manual under parameter expansion.
+
+Dave only details about a quarter of those 20 here in this episode. 
+
+Why learn them, instead of just passing parameters to basename, to dirname, to sed and awk, or to more robust string-manipulation techniques available in other languages? The syntax is compact to the point of being arcane, especially since to access any of them you already have to do the heavyweight ${varname} syntax. Many of these operators don't have equivalents in languages like Ruby and Python because these capabilities are instead simply exposed as functions on the language's native String class.
+
+The answer is, if you're writing in bash and you're concerned with both portability and performance, avoiding execs and subshells is one of the most potent optimizations available to you.
+
+In Dave's four example files, let's break down the fork/exec stuff which can be avoided:
+1. 00-simple, partial string deletion:
+The two examples here explicitly replace dirname and basename. Both of those are part of the POSIX standard, but what if you're writing a script executing in a container so minimized it doesn't include those, but does include bash? What if you're breaking a filename into those bits inside a loop that will execute millions of times? 
+
+2. 01-replace, static string replacement:
+There are a ton of ways to do this, but the most popular is probably something like:
+	echo $var | sed -e 's/string1/string2/'
+
+Again, what if you're writing in a container that doesn't have sed, or are acting on a category of string that might be mutated millions of times by a heavy script?
+
+But even some of the other bash-native ways, like regex-matching the string using a [[ string =~ pattern ]] and then inspecting the result using BASH_REMATCH and constructing a replacement variable using capture groups, are both more labor-intensive to write, more challenging to read, and more computationally expensive to execute.
+
+In evaluating code quality, you don't just want to consider performance and portability, you also want to consider maintainability. The mechanism Dave demonstrates here often strikes the best balance between all of those needs.
+
+3. 02-unset, providing default values for unset variables.
+
+This one doesn't have performance and portability implications but is a very clean way to write compact code. I often use it in scripts to assign default values for arguments, for example if I have an audit script where the first argument is either check or fix, and the second argument is either dev, stage, or prod, I might write:
+	ACTION=${1:-check}
+	TARGET=${2:-dev}
+instead of either printing a usage statement or doing that kind of assignment via lengthier mechanisms like:
+	if [[ -z $1 ]]
+	then
+		ACTION=check
+	else
+		ACTION=$1
+	fi
+
+	if [[ -z $2 ]]
+	then
+		TARGET=dev
+	else
+		TARGET=$2
+	fi
+
+	or even:
+	[[ -z $ACTION ]] && ACTION=check || ACTION=$1
+	[[ -z $TARGET ]] && TARGET=dev || TARGET=$1
+
+Of all of these, I find the first one far more expressive to read.
+
+04. 03-extras, lower-casing and upper-casing.
+
+These ones were new to me! They don't exist in bash 3, which is the version I first learned on, and I didn't do a good enough job revisiting the new feature list when I started operating in environments where bash 4 and then bash 5 were the standard. Generally for this kind of string normalization I have either used the tolower/toupper functions in awk, or the tr '[A-Z]' '[a-z]' type constructions. As in our first example, execing to a different language/utility for these minor usages can become very costly if you have to do it often, and execing at all damages a script's portability, which can matter a great deal if you're trying to code for a container, for an embedded system implementing busybox rather than a full GNU/Linux style environment, for git hooks that need to function in both Windows git-bash as well as on traditional Unix variants, etc. 
+
+There's a whole toolbox of these available to you. It's worth looking at all of them to see which ones are worth using. If you're going to program in bash, rather than merely to script or interact in it, these operators are absolutely required reading.
+
+Happy string manipulating!

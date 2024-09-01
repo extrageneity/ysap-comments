@@ -1,0 +1,51 @@
+Episode 28 - Capturing return codes in Bash Functions and the gotchas
+
+In this episode, Dave looks at the $? variable, for return codes, and shows a corner case related to 
+assigning a variable locally in a function.
+
+His sample programs, program1, program2, and program4 all work as intended. In program 3, Dave uses the syntax:
+	local output=$(true)
+	local output=$(false)
+... which, in both cases, returns 0 instead of instead returning the expected 1 in the second case.
+
+So, why is this happening?
+
+$? contains the status of the last command. In the case above, the true and false commands are being executed by bash inside a subshell. bash sets $? to contain the return code of the subshell, which is the same as the return code of the executed command. Then, bash overrides $? with the return code of the local builtin.
+
+This same behavior will happen with any of the other bash builtins that permit you to do variable assignment in the parent shell: set, declare, typeset, export, perhaps also others I've forgotten.
+
+At first, this just seems like interesting errata, but this same observation--that bash builtins, and test expressions such as the [[ ]] syntax, set the same $? as executed commands--crops up in a lot of other places. Take the more real-world use case where you do something like:
+
+function myfunc() {
+	output=$(ssh remotehost command 2>&1)
+	if [[ $? -ne 0 ]]
+	then
+		echo "ssh exited with non-zero exit code: $?"
+		echo "output was:"
+		echo "${output}"
+		return $?
+	fi
+}
+
+This is so pathologically broken you might expect it to have been written by some generative AI. Can you see how?
+
+We reference $? three times, once to inspect the return code of ssh, once to print that return code in the output, and once to have our function return the same code that ssh did.
+
+The first reference works as intended. The second reference instead gets the return code of the [[ $? -ne 0 ]] expression, which will be 0 if ssh failed with any non-zero return code, and 1 if ssh succeeded. The last reference just gets the exit code of the last echo command.
+
+Worse, what about the else condition, where the exit code of $? was zero? Functions return whatever $? was at the end of the function call. In this case, that would be a return 1 from the [[ $? -ne 0 ]] expression. So, if the program describes the ssh error code on stdout, it will do so incorrectly, and the function will always return the opposite of the intended return code, whether the ssh command itself succeeded or failed. In the event our SSH command returned some code other than 0 or 1, that return code can never be returned by the function at all, under any circumstances.
+
+The fix is simple, as soon as we run the SSH command we just do something like:
+	_rc=$?
+... and then deference $_rc instead of $? throughout the rest of the function. (And, explicitly return $_rc at the end.)
+
+The other common error with return codes happens when you're working with pipelines. To slightly modify our example above, what if we do:
+	ssh remotehost command | tee ssh-command.out
+instead? In this case, $? will be the return code of the 'tee' command, not of the 'ssh' command. We can instead see the exit code of the ssh command in ${PIPESTATUS[0]} -- although in real world cases we need to save off the PIPESTATUS array similarly to how we have to save off the $? variable, doing something like:
+	_rcs=( "${PIPESTATUS[@]}" )
+
+The key takeaway here is that if you want to suck less at bash, you need to understand two things:
+1. The $? and $PIPESTATUS variables are ephemeral and change almost immediately after being set.
+2. Many bash expressions and builtins will set $? in the same way as a conventional command. So save off your exit codes immediately after command invocation if you need them!
+
+Happy exit code inspection!

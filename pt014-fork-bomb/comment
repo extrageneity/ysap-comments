@@ -64,7 +64,7 @@ Dave mentions a few means of doing this, as asides. ulimits are the oldest, and 
 You need to be conscious of this as a developer--programming errors can exhaust resources, not just within the four walls of the process where your software runs, but on the entire system, on disks attached to that system, even on other network-addressible resources attached to that system. The key thing to take away from an episode like this one is not "wow, look at the damage you can do," it's to understand the vector for that damage and how mistakes like that could propagate in code as you try to parallelize without contemplating it.
 
 CONCLUSIONS
-Like a lot of YSAP episodes, this one shows a very tiny script with very deep implications. There's even stuff I left out, like how different shells handle recursion depth considerations, how those considerations are handled across subshells, and whether safeguards built into the shell itself, or into the OS, will kick in first. Consider these two examples:
+Like a lot of YSAP episodes, this one shows a very tiny script with very deep implications. There's even stuff I left out, like how different shells handle recursion depth considerations, how those considerations are handled across subshells, and whether safeguards built into the shell itself, or into the OS, will kick in first. Consider these four examples:
 	a() { a }; a		# recurse in foreground
 	a() { (a) }; a		# recurse in foreground spawning subshells
 	a() { a | a }; a	# recurse in foreground spawning pipelined subshells

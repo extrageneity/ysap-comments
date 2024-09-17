@@ -19,7 +19,7 @@ This same * vs @ distinction is also available in arrays, for example, put a cop
 - based ${a[*]}
 - based ${a[@]}
 - based "${a[*]}"
-- based "${a[@]" 
+- based "${a[@]}" 
 
 Another way of thinking about all of this is that in bash, the name of the variable containing the argv array is the empty string.
 

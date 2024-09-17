@@ -13,13 +13,13 @@ He begins to invoke the script with different arguments, eventually giving a quo
 $* and $@, unquoted, are both expanding their internal concept of argv, using the first character in the bash field separator variable IFS as the separating character in the expansion. This expansion is then subject to bash word-splitting, which is governed by the whole of IFS, not just the first character. In the special case "$@" or "${@}", bash instead expands argv where the expansion is not subject to further word splitting. This special case is the final variation on the script Dave shows us, his based version. Along the way he also shows us how $* expands arg, still using that IFS character as the field separator, but with the expansion not subject to further word splitting by bash.
 
 This same * vs @ distinction is also available in arrays, for example, put a copy of Dave’s based script on your system and then try:
-- a=(a b c "d    e")
-- based "${#a}"
-- based "${a[1]}"
-- based ${a[*]}
-- based ${a[@]}
-- based "${a[*]}"
-- based "${a[@]}" 
+- s=(a b c "d    e")
+- based "${#s}"
+- based "${s[1]}"
+- based ${s[*]}
+- based ${s[@]}
+- based "${s[*]}"
+- based "${s[@]}" 
 
 Another way of thinking about all of this is that in bash, the name of the variable containing the argv array is the empty string.
 

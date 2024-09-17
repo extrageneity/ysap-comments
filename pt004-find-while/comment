@@ -15,10 +15,15 @@ Dave's main point here is that choosing the right approach in a bash script (in 
 But, for fun, let's talk about some of the other ways we could have preserved that find+while read solution while absorbing Dave's new requirement to count the printed files:
 
 1. Instead of pipelining the find command into stdin of the child process, we could have instead redirected stdin from a subshell containing the find command. This looks like:
+i=0
+
 while read -d ''
 do
   echo "file is <$REPLY>"
+  ((i++))
 done < <(find . -type f -print0)
+
+echo "found $i files"
 
 This <(command) syntax in the EXPANSION section of the bash manual under the heading 'process substitution'. The command is executed in a subshell, with its stdout sent to a named FIFO, /dev/fd/<number>, and the path to this named FIFO replaces the construct on the command line, such that the while loop is reading its input from a special file, and still executes as the parent shell. This instead executes the find command in a subshell, but since we're already exec()ing from bash to find anyway, this is a distinction without a difference.
 

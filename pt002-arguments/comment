@@ -1,41 +1,41 @@
 Episode 2: Parsing arguments in bash.
 
-In this video, Dave is demonstrating how bash processes command line arguments. As is so often the case in bash programming, it’s helpful to understand the underlying Unix/Linux concepts, this time the way a program launched from the exec() family of system calls supplies arguments to the program’s main() function:
+In this video, Dave is demonstrating how bash processes command line arguments. As is so often the case in bash programming, it's helpful to understand the underlying Unix/Linux concepts, this time the way a program launched from the exec() family of system calls supplies arguments to the program's main() function:
 1. argc, an integer. Indicates the number of arguments.
 2. argv, a pointer to an array of strings, includes the list of arguments, with the first element in the array being the name of the executed program.
 
-This video compares the relationship between $* and $@, both of which are used to dereference the full array of positional parameters, except for that first element of argv which has the name of the script. That’s accessed as $0. The number of arguments (roughly, the equivalent of args) is accessed as $#.
+This video compares the relationship between $* and $@, both of which are used to dereference the full array of positional parameters, except for that first element of argv which has the name of the script. That's accessed as $0. The number of arguments (roughly, the equivalent of args) is accessed as $#.
 
-In Dave’s initial cringe script, he’s looping over the unquoted $*, again showing how bash word splitting applies, even with arguments.
+In Dave's initial cringe script, he's looping over the unquoted $*, again showing how bash word splitting applies, even with arguments.
 
-He begins to invoke the script with different arguments, eventually giving a quoted string that contains integral whitespace, here showing how bash can supply embedded whitespace to programs. Remember, the exec() system call family isn’t messing around with word splitting at all, the arguments are just an array of strings supplied to it, and these arguments can contain anything you want, including non-printable characters, whitespace, different character sets, whatever. This is a very early introduction to a very important concept for shell users: How do you get bash to set up the precise argv array you want when you use it to invoke other programs?
+He begins to invoke the script with different arguments, eventually giving a quoted string that contains integral whitespace, here showing how bash can supply embedded whitespace to programs. Remember, the exec() system call family isn't messing around with word splitting at all, the arguments are just an array of strings supplied to it, and these arguments can contain anything you want, including non-printable characters, whitespace, different character sets, whatever. This is a very early introduction to a very important concept for shell users: How do you get bash to set up the precise argv array you want when you use it to invoke other programs?
 
-$* and $@, unquoted, are both expanding their internal concept of argv, using the first character in the bash field separator variable IFS as the separating character in the expansion. This expansion is then subject to bash word-splitting, which is governed by the whole of IFS, not just the first character. In the special case “$@“ or “${@}”, bash instead expands argv where the expansion is not subject to further word splitting. This special case is the final variation on the script Dave shows us, his based version. Along the way he also shows us how $* expands arg, still using that IFS character as the field separator, but with the expansion not subject to further word splitting by bash.
+$* and $@, unquoted, are both expanding their internal concept of argv, using the first character in the bash field separator variable IFS as the separating character in the expansion. This expansion is then subject to bash word-splitting, which is governed by the whole of IFS, not just the first character. In the special case "$@" or "${@}", bash instead expands argv where the expansion is not subject to further word splitting. This special case is the final variation on the script Dave shows us, his based version. Along the way he also shows us how $* expands arg, still using that IFS character as the field separator, but with the expansion not subject to further word splitting by bash.
 
 This same * vs @ distinction is also available in arrays, for example, put a copy of Dave’s based script on your system and then try:
-- a=(a b c “d    e”)
-- based “${#a}”
-- based “${a[1]}”
+- a=(a b c "d    e")
+- based "${#a}"
+- based "${a[1]}"
 - based ${a[*]}
 - based ${a[@]}
-- based “${a[*]}”
-- based “${a[@]” 
+- based "${a[*]}"
+- based "${a[@]" 
 
 Another way of thinking about all of this is that in bash, the name of the variable containing the argv array is the empty string.
 
 This script does not demonstrate every way of interacting with bash positional parameters. $1 through $9 access the first 9 positional parameters, brace enclosures (e.g., ${10} , ${11}, ${20}) are needed for subsequent arguments. 
 
-The section of the bash man page which discusses all this at length is the PARAMETERS section, especially in the subsection titled “Special Parameters.” 
+The section of the bash man page which discusses all this at length is the PARAMETERS section, especially in the subsection titled "Special Parameters." 
 
 You can alter the set of bash positional parameters in two commonly used ways:
-1. The shift command is used to remove positional parameters, deleting elements starting from $1 and shifting the others leftward in the array. Often scripts will do something like: while [ $# -gt 0 ]; do echo “arg is: \”$1\””; shift; done
-2. The set command is used to reset the positional parameters completely. A common pattern in scripts is: [ $# -eq 0 ] && set defaultarg1 defaultarg2 … defaultargN
-… in order to give a command a default set of arguments to act on.
+1. The shift command is used to remove positional parameters, deleting elements starting from $1 and shifting the others leftward in the array. Often scripts will do something like: while [ $# -gt 0 ]; do echo "arg is: \"$1\""; shift; done
+2. The set command is used to reset the positional parameters completely. A common pattern in scripts is: [ $# -eq 0 ] && set defaultarg1 defaultarg2 ... defaultargN
+... in order to give a command a default set of arguments to act on.
 
-Dave’s focus in these early videos is to get you thinking right away about several key concepts:
+Dave's focus in these early videos is to get you thinking right away about several key concepts:
 - bash word splitting, and how to control it using quoting
 - how variable expansion interacts with word splitting
 
-He’s starting here, in part, because the beating heart of any bash program is how it passes arguments to the other commands it uses exec() family system calls to invoke. But he’s also starting here for another important reason: To demonstrate how to do iterative debugging of bash scripts, not just by changing one thing at a time until you get it right, but also by being imaginative about what will happen if your script sees input you did not initially expect, especially in terms of how that input behaves if contains non-alphanumeric characters such as whitespace, newlines, or even non-printables such as terminal control sequences. 
+He's starting here, in part, because the beating heart of any bash program is how it passes arguments to the other commands it uses exec() family system calls to invoke. But he's also starting here for another important reason: To demonstrate how to do iterative debugging of bash scripts, not just by changing one thing at a time until you get it right, but also by being imaginative about what will happen if your script sees input you did not initially expect, especially in terms of how that input behaves if contains non-alphanumeric characters such as whitespace, newlines, or even non-printables such as terminal control sequences. 
 
 As you learn bash using these videos as teaching aids, keep in mind that thinking like a bash programmaer involves always keeping these things in mind. Happy scripting!
